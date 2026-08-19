@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Editor / local tooling
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# One-shot local scripts
+_rename_archivtrace.py
+_patch_*.py
+_tmp*
+
+# All working artefacts (collecte, downloads, synthèses, logs) — never commit
+work/
+

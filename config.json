@@ -1,0 +1,123 @@
+{
+
+  // =============================================================================
+
+  // ArchivTrace — project settings (JSONC: // and /* */ comments allowed)
+
+  // Precedence: CLI > this file > defaults in config.py
+
+  // =============================================================================
+
+
+
+  // --- LLM (nested block preferred for multi-model + future online service) ----
+
+  "llm": {
+
+    // Allowed: "ollama" | "openai" | "openrouter" | "perplexity" | "none"
+
+    "provider": "ollama",
+
+    "host": "http://localhost:11434",
+
+    "timeout": 900,
+
+    "max_chars": 12000,
+
+    "models": {
+
+      // Grounded claim extraction (JSON, citations) — uncertainty-aware model
+
+      "extraction": "gemma4:26b",
+
+      // Long-context narrative synthesis
+
+      "synthesis": "qwen3.5"
+
+      // Optional classification model (defaults to extraction when omitted):
+
+      // "classification": "gemma4:26b"
+
+    },
+
+    "fallback_model": "llama3.2",
+
+    // Thinking: OFF for extraction (strict JSON). Synthesis default OFF too —
+
+    // qwen3.5 thinking often skips the required JSON fences; set true to experiment.
+
+    // Final structured data is always taken from content, never from thinking tokens.
+
+    "thinking_mode": {
+
+      "extraction": false,
+
+      "synthesis": false
+
+    },
+
+    // Cloud API key. Prefer env OPENAI_API_KEY | OPENROUTER_API_KEY | …
+
+    "api_key": null,
+
+    "base_url": null
+
+  },
+
+
+
+  // Legacy flat aliases (still honoured if set; nested ``llm`` fills only when
+
+  // the flat key is absent — keep one style to avoid confusion).
+
+  // "llm_provider": "ollama",
+
+  // "llm_model": "qwen3.5",
+
+  // "ollama_host": "http://localhost:11434",
+
+  // "ollama_model": "qwen3.5",
+
+
+
+  // Max output tokens — per-document analysis (num_predict / max_tokens)
+
+  "ollama_num_predict": 2048,
+
+
+
+  // Max output tokens — synthesis
+
+  "synthesis_num_predict": 8192,
+
+
+
+  // Character budget for the synthesis prompt
+
+  "synthesis_max_chars": 96000,
+
+
+
+  // --- LLM call logs (cost analysis) ---------------------------------------------
+
+  "llm_log_dir": "work/logs/llm",
+
+  "llm_log_max_bytes": 5000000,
+
+  "llm_log_backup_count": 10
+
+
+
+  // Optional fields (examples — uncomment and add a comma above if enabling):
+
+  // "output_dir": "work/research"
+
+  // "download_dir": "work/downloads"
+
+  // "enable_ocr": false
+
+  // "ocr_lang": "fra"
+
+}
+
+

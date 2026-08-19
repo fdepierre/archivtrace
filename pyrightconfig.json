@@ -1,0 +1,9 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": [
+    "../shared/ollama_shared"
+  ],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic"
+}
