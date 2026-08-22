@@ -262,12 +262,11 @@ def apply_nli_to_synthesis(
         return output, [], []
 
     by_id = {c.claim_id: c for c in grounded}
-    kept: list[SynthesisFact] = []
     demoted: list[SynthesisVerificationPoint] = list(output.points_a_verifier)
     results: list[NliResult] = []
     assessments: list[tuple[SynthesisFact, float, str, str]] = []
 
-    for fact in output.faits_etablis:
+    def _score_fact(fact: SynthesisFact) -> tuple[NliResult, float, str]:
         citations: list[str] = []
         scores: list[float] = []
         for cid in fact.claim_ids:
@@ -284,11 +283,15 @@ def apply_nli_to_synthesis(
             by_id[c].affirmation for c in fact.claim_ids if c in by_id
         )
         nli = classify_fact_nli(fact, citation_blob, llm=llm, use_llm=use_llm)
-        results.append(nli)
         base = max(scores) if scores else 0.5
         score = max(0.0, min(0.99, float(base) + nli.score_delta))
         gate = confidence_gate(score)
+        return nli, score, gate
 
+    kept_etablis: list[SynthesisFact] = []
+    for fact in output.faits_etablis:
+        nli, score, gate = _score_fact(fact)
+        results.append(nli)
         if nli.label == "contradiction" or gate == "hypotheses":
             demoted.append(
                 SynthesisVerificationPoint(
@@ -312,11 +315,10 @@ def apply_nli_to_synthesis(
                     statut="revue_humaine",
                 )
             )
-            # Neutral never stays in Faits établis (production gate).
+            # Neutral never stays in Faits corroborés (production gate).
             continue
 
-        # entailment
-        kept.append(fact)
+        kept_etablis.append(fact)
         assessments.append((fact, score, gate, nli.label))
         if gate == "alerte":
             demoted.append(
@@ -330,9 +332,41 @@ def apply_nli_to_synthesis(
                 )
             )
 
+    # Documented (single-source): only demote hard contradictions; keep alerte/neutral.
+    kept_documentes: list[SynthesisFact] = []
+    for fact in output.faits_documentes:
+        nli, score, gate = _score_fact(fact)
+        results.append(nli)
+        if nli.label == "contradiction":
+            demoted.append(
+                SynthesisVerificationPoint(
+                    description=(
+                        f"[à revoir manuellement] {fact.texte} "
+                        f"(NLI={nli.label}; score={score:.2f}; {nli.justification})"
+                    ),
+                    sources_indices=list(fact.sources),
+                    statut="à revoir manuellement",
+                )
+            )
+            continue
+        kept_documentes.append(fact)
+        assessments.append((fact, score, gate if gate != "hypotheses" else "alerte", nli.label))
+        if nli.label == "neutral" or gate in {"alerte", "hypotheses"}:
+            demoted.append(
+                SynthesisVerificationPoint(
+                    description=(
+                        f"[documenté — revue] {fact.texte} "
+                        f"(NLI={nli.label}; score={score:.2f})"
+                    ),
+                    sources_indices=list(fact.sources),
+                    statut="documente_revue",
+                )
+            )
+
     return (
         SynthesisOutput(
-            faits_etablis=kept,
+            faits_etablis=kept_etablis,
+            faits_documentes=kept_documentes,
             chronologie=output.chronologie,
             points_a_verifier=demoted,
             plan_article=output.plan_article,

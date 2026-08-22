@@ -76,6 +76,8 @@ class SynthesisResult:
     grounded_claim_count: int = 0
     synthesis_validated: bool = False
     fact_assessments: list = field(default_factory=list)
+    # Corroborated / documented / hypotheses counts for the quality report.
+    tier_counts: dict[str, int] = field(default_factory=dict)
 
 
 class Synthesizer:
@@ -90,7 +92,8 @@ class Synthesizer:
         mode: str = "synthese",
         max_prompt_chars: int = DEFAULT_SYNTHESIS_MAX_CHARS,
         per_source_llm_chars: int = DEFAULT_PER_SOURCE_LLM_CHARS,
-        require_corroboration: bool = True,
+        require_corroboration: bool | None = None,
+        promotion_mode: str | None = None,
         verify_cove: bool = False,
         verify_nli: bool = True,
         nli_use_llm: bool = False,
@@ -102,7 +105,19 @@ class Synthesizer:
         self.mode = mode
         self.max_prompt_chars = max_prompt_chars
         self.per_source_llm_chars = per_source_llm_chars
-        self.require_corroboration = require_corroboration
+        from pipeline.corroboration_checker import resolve_promotion_mode
+
+        # Default is tiered (single-source → Faits documentés).
+        # Legacy: require_corroboration=True → strict demotion.
+        if promotion_mode is not None:
+            self.promotion_mode = promotion_mode
+        elif require_corroboration is True:
+            self.promotion_mode = "strict"
+        elif require_corroboration is False:
+            self.promotion_mode = "all"
+        else:
+            self.promotion_mode = resolve_promotion_mode()
+        self.require_corroboration = self.promotion_mode == "strict"
         self.verify_cove = verify_cove
         self.verify_nli = verify_nli
         self.nli_use_llm = nli_use_llm
@@ -136,7 +151,7 @@ class Synthesizer:
             grounded_raw,
             unverified,
             catalog,
-            require_multi_source=self.require_corroboration,
+            promotion_mode=self.promotion_mode,  # type: ignore[arg-type]
         )
         known_ids = {rec.id for rec in catalog}
         refs = self._all_references(collection)
@@ -157,13 +172,7 @@ class Synthesizer:
             ]
             body = (
                 "> ⚠️ Aucun fait historique n’a été validé par une citation source "
-                "dans cette synthèse"
-                + (
-                    " (corroboration multi-sources insuffisante)."
-                    if any(u.reason == "corroboration_insuffisante" for u in unverified)
-                    else "."
-                )
-                + "\n\n"
+                "dans cette synthèse.\n\n"
                 + NO_GROUNDED_CLAIMS_MARKDOWN
             )
             if structured.points_a_verifier:
@@ -214,6 +223,7 @@ class Synthesizer:
                 grounded_claim_count=len(grounded),
                 synthesis_validated=True,
                 fact_assessments=assessments,
+                tier_counts=self._tier_counts(validated, grounded),
             )
 
         backend, raw_body = self._generate(prompt)
@@ -247,13 +257,63 @@ class Synthesizer:
                         validation_errors.append(str(exc2))
 
         if validated is not None:
+            validated = self._partition_facts_by_tier(validated, grounded)
             validated, assessments = self._apply_verification(validated, grounded)
         else:
             assessments = []
 
         if validated is None or (
-            not validated.faits_etablis and not validated.chronologie
+            not validated.faits_etablis
+            and not validated.faits_documentes
+            and not validated.chronologie
         ):
+            # Prefer deterministic promotion over an empty rejected shell when
+            # we already have citation-backed claims (LLM JSON often fails).
+            if grounded:
+                logger.warning(
+                    "LLM synthesis rejected (%s) — falling back to deterministic "
+                    "tiered promotion of %d grounded claim(s)",
+                    "; ".join(validation_errors) or "empty",
+                    len(grounded),
+                )
+                validated = self._deterministic_output_from_claims(
+                    grounded, unverified
+                )
+                validated, assessments = self._apply_verification(
+                    validated, grounded
+                )
+                structured = self._structured_from_validated(
+                    catalog, validated, unverified
+                )
+                body = self._render_validated_body(validated, assessments)
+                if validation_errors:
+                    body = (
+                        "> ℹ️ Synthèse LLM invalide — promotion déterministe "
+                        "des claims ancrés (voir erreurs techniques en bas).\n\n"
+                        + body
+                        + "\n\n### Erreurs techniques (LLM)\n\n"
+                        + "\n".join(f"- {e}" for e in validation_errors)
+                        + "\n"
+                    )
+                return SynthesisResult(
+                    query=collection.query,
+                    source_path=self._source_path_label(collection),
+                    body=body,
+                    llm_backend="template",
+                    model=None,
+                    generated_at=datetime.now(timezone.utc),
+                    references=refs,
+                    connectors=collection.connector,
+                    source_count=len(collection.sources),
+                    structured=structured,
+                    needs_manual_review=True,
+                    validation_errors=validation_errors,
+                    grounded_claim_count=len(grounded),
+                    synthesis_validated=True,
+                    fact_assessments=assessments,
+                    tier_counts=self._tier_counts(validated, grounded),
+                )
+
             # Reject narrative: do not publish unsourced prose.
             err_block = "\n".join(f"- {e}" for e in validation_errors) or "- (inconnu)"
             body = (
@@ -300,6 +360,7 @@ class Synthesizer:
                 validation_errors=validation_errors,
                 grounded_claim_count=len(grounded),
                 synthesis_validated=False,
+                tier_counts=self._tier_counts(None, grounded),
             )
 
         structured = self._structured_from_validated(catalog, validated, unverified)
@@ -325,7 +386,31 @@ class Synthesizer:
             grounded_claim_count=len(grounded),
             synthesis_validated=True,
             fact_assessments=assessments,
+            tier_counts=self._tier_counts(validated, grounded),
         )
+
+    @staticmethod
+    def _tier_counts(validated, grounded) -> dict[str, int]:
+        """Summarize promotion tiers for the quality report."""
+        corroborated = 0
+        documented = 0
+        if validated is not None:
+            corroborated = len(getattr(validated, "faits_etablis", None) or [])
+            documented = len(getattr(validated, "faits_documentes", None) or [])
+        elif grounded:
+            corroborated = sum(
+                1 for c in grounded if getattr(c, "promotion_tier", None) == "corroborated"
+            )
+            documented = sum(
+                1 for c in grounded if getattr(c, "promotion_tier", None) == "documented"
+            )
+        hypotheses = max(0, len(grounded or []) - corroborated - documented)
+        return {
+            "corroborated": corroborated,
+            "documented": documented,
+            "hypotheses": hypotheses,
+            "grounded_input": len(grounded or []),
+        }
 
     def _apply_verification(self, validated, grounded):
         """Run NLI (+ optional CoVe) and return (output, assessments)."""
@@ -364,6 +449,56 @@ class Synthesizer:
         )
 
     @staticmethod
+    def _partition_facts_by_tier(validated, grounded):
+        """Ensure faits_etablis / faits_documentes match claim promotion tiers.
+
+        Also inject any documented grounded claims the LLM omitted.
+        """
+        from pipeline.prompt_schemas import SynthesisFact, SynthesisOutput
+
+        by_id = {c.claim_id: c for c in grounded}
+        established: list = []
+        documented: list = []
+
+        def _route(fact) -> None:
+            tiers = {
+                (by_id[cid].promotion_tier or "corroborated")
+                for cid in fact.claim_ids
+                if cid in by_id
+            }
+            if "corroborated" in tiers or (not tiers and not by_id):
+                established.append(fact)
+            else:
+                documented.append(fact)
+
+        for fact in validated.faits_etablis:
+            _route(fact)
+        for fact in validated.faits_documentes:
+            _route(fact)
+
+        used_ids = {cid for f in established + documented for cid in f.claim_ids}
+        for claim in grounded:
+            if claim.claim_id in used_ids:
+                continue
+            if claim.promotion_tier != "documented":
+                continue
+            documented.append(
+                SynthesisFact(
+                    texte=f"{claim.affirmation} [S:{claim.source_id}]",
+                    sources=[claim.source_id],
+                    claim_ids=[claim.claim_id],
+                )
+            )
+
+        return SynthesisOutput(
+            faits_etablis=established,
+            faits_documentes=documented,
+            chronologie=validated.chronologie,
+            points_a_verifier=validated.points_a_verifier,
+            plan_article=validated.plan_article,
+        )
+
+    @staticmethod
     def _deterministic_output_from_claims(grounded, unverified):
         """Build a minimal valid SynthesisOutput without calling an LLM."""
         from pipeline.prompt_schemas import (
@@ -373,14 +508,27 @@ class Synthesizer:
             SynthesisVerificationPoint,
         )
 
-        facts = [
-            SynthesisFact(
-                texte=f"{claim.affirmation} [S:{claim.source_id}]",
-                sources=[claim.source_id],
-                claim_ids=[claim.claim_id],
-            )
-            for claim in grounded
+        corroborated = [
+            c for c in grounded if (c.promotion_tier or "corroborated") == "corroborated"
         ]
+        documented = [
+            c for c in grounded if c.promotion_tier == "documented"
+        ]
+        # If tiers unset (legacy callers), treat all as established.
+        if not corroborated and not documented and grounded:
+            corroborated = list(grounded)
+
+        def _facts(claims):
+            return [
+                SynthesisFact(
+                    texte=f"{claim.affirmation} [S:{claim.source_id}]",
+                    sources=[claim.source_id],
+                    claim_ids=[claim.claim_id],
+                )
+                for claim in claims
+            ]
+
+        chrono_src = corroborated or documented
         chrono = [
             SynthesisTimelineEvent(
                 date=claim.source_date or "",
@@ -388,7 +536,7 @@ class Synthesizer:
                 sources=[claim.source_id],
                 claim_ids=[claim.claim_id],
             )
-            for claim in grounded
+            for claim in chrono_src
             if claim.source_date
         ]
         points = [
@@ -408,7 +556,8 @@ class Synthesizer:
             for item in unverified[:30]
         ]
         return SynthesisOutput(
-            faits_etablis=facts,
+            faits_etablis=_facts(corroborated),
+            faits_documentes=_facts(documented),
             chronologie=chrono,
             points_a_verifier=points,
             plan_article=[],
@@ -421,8 +570,8 @@ class Synthesizer:
         repair = (
             prompt
             + "\n\n<repair>\nTa réponse précédente est invalide ou hors schéma. "
-            "Réponds UNIQUEMENT avec l'objet JSON (faits_etablis, chronologie, "
-            "points_a_verifier, plan_article). Aucune référence [0]. "
+            "Réponds UNIQUEMENT avec l'objet JSON (faits_etablis, faits_documentes, "
+            "chronologie, points_a_verifier, plan_article). Aucune référence [0]. "
             "Chaque fait doit contenir [S:n] cohérent avec sources et claim_ids.\n"
             "</repair>\n"
             f"<previous>\n{(raw_body or '')[:4000]}\n</previous>"
@@ -508,6 +657,7 @@ class Synthesizer:
         ]
         text_blob = "\n".join(
             [f.texte for f in validated.faits_etablis]
+            + [f.texte for f in validated.faits_documentes]
             + [e.texte for e in validated.chronologie]
             + [p.description for p in points]
         )
@@ -528,12 +678,13 @@ class Synthesizer:
         from pipeline.verification_pipeline import render_confidence_section
 
         assert isinstance(validated, SynthesisOutput)
-        lines: list[str] = ["## Faits établis et sourcés", ""]
-        if validated.faits_etablis:
-            score_by_text = {
-                a.texte: a for a in (assessments or [])
-            }
-            for fact in validated.faits_etablis:
+        score_by_text = {a.texte: a for a in (assessments or [])}
+
+        def _fact_lines(facts) -> list[str]:
+            lines: list[str] = []
+            if not facts:
+                return ["_Aucun._"]
+            for fact in facts:
                 meta = score_by_text.get(fact.texte)
                 if meta is not None:
                     lines.append(
@@ -544,8 +695,33 @@ class Synthesizer:
                     )
                 else:
                     lines.append(f"- {fact.texte}")
+            return lines
+
+        lines: list[str] = [
+            "## Faits corroborés (≥2 sources indépendantes)",
+            "",
+        ]
+        if validated.faits_etablis:
+            lines.extend(_fact_lines(validated.faits_etablis))
         else:
-            lines.append("_Aucun fait établi validé._")
+            lines.append("_Aucun fait corroboré validé._")
+
+        lines.extend(
+            [
+                "",
+                "## Faits documentés (source unique, citation ancrée)",
+                "",
+            ]
+        )
+        if validated.faits_documentes:
+            lines.extend(_fact_lines(validated.faits_documentes))
+        else:
+            lines.append("_Aucun fait documenté (source unique)._")
+
+        # Backward-compatible alias heading when only legacy consumers expect it.
+        if validated.faits_etablis or validated.faits_documentes:
+            lines.extend(["", "<!-- legacy: Faits établis et sourcés (voir sections ci-dessus) -->"])
+
         lines.extend(["", "## Chronologie sourcée", ""])
         if validated.chronologie:
             lines.append("| Date / période | Événement | Sources |")

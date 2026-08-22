@@ -3,6 +3,10 @@
 After mechanical keyword matching, this component sends relevant portions of
 the extracted text to the configured LLM and asks for structured claims with
 mandatory verbatim citations (prompt ``analyze_document``).
+
+Optional second pass (``two_pass_extraction``) uses
+``analyze_document_descriptive`` when the strict pass yields no confirmed
+claims — those results stay ``statut=insuffisant`` (tier C / hypotheses).
 """
 
 from __future__ import annotations
@@ -13,12 +17,17 @@ from models import ExtractedText, KeywordMatch, LlmExtraction
 from config import DEFAULT_LLM_MAX_CHARS
 from pipeline.llm_gateway import LlmGateway
 from pipeline.prompt_schemas import (
+    AnalyzeDocumentResult,
+    Affirmation,
     PromptValidationError,
     extract_json_payload,
     render_analyze_markdown,
     validate_analyze_response,
 )
-from pipeline.prompts import ANALYZE_DOCUMENT_PROMPT
+from pipeline.prompts import (
+    ANALYZE_DOCUMENT_DESCRIPTIVE_PROMPT,
+    ANALYZE_DOCUMENT_PROMPT,
+)
 from pipeline.llm_validation_stats import VALIDATION_STATS
 from utils.strings import truncate
 
@@ -33,11 +42,14 @@ class LlmIdeaExtractor:
         *,
         client: LlmGateway,
         max_chars: int = DEFAULT_LLM_MAX_CHARS,
+        two_pass_extraction: bool = False,
     ) -> None:
         """Bind the shared LLM gateway and per-document char budget."""
         self.client = client
         self.max_chars = max_chars
+        self.two_pass_extraction = two_pass_extraction
         self.prompt = ANALYZE_DOCUMENT_PROMPT
+        self.descriptive_prompt = ANALYZE_DOCUMENT_DESCRIPTIVE_PROMPT
 
     def extract(
         self,
@@ -67,6 +79,7 @@ class LlmIdeaExtractor:
                 skipped=True,
             )
         user_prompt = self._build_prompt(
+            self.prompt,
             query,
             title,
             sample,
@@ -81,7 +94,7 @@ class LlmIdeaExtractor:
                 system=self.prompt.system,
                 operation="analyse",
             )
-            raw = self._retry_json_if_needed(raw, user_prompt)
+            raw = self._retry_json_if_needed(raw, user_prompt, self.prompt.system)
             try:
                 parsed = validate_analyze_response(raw, document_text=sample)
             except PromptValidationError as exc:
@@ -94,6 +107,31 @@ class LlmIdeaExtractor:
                 )
                 snippet = (raw or "")[:240].replace("\n", " ")
                 logger.error("Raw LLM snippet: %r", snippet)
+                # Still try descriptive pass if enabled — may salvage pistes.
+                if self.two_pass_extraction:
+                    descriptive = self._run_descriptive_pass(
+                        query,
+                        title,
+                        sample,
+                        matches,
+                        source=source,
+                        cote=cote,
+                        date=date,
+                    )
+                    if descriptive is not None and descriptive.affirmations:
+                        body = render_analyze_markdown(descriptive)
+                        return LlmExtraction(
+                            body=body,
+                            model=self.client.model,
+                            needs_review=True,
+                            error=(
+                                "À revoir manuellement — passe stricte invalide ; "
+                                "passe descriptive (pistes uniquement)"
+                            ),
+                            prompt_version=self.descriptive_prompt.version,
+                            claims=descriptive.model_dump(),
+                            raw_response=raw,
+                        )
                 return LlmExtraction(
                     body="",
                     model=self.client.model,
@@ -103,8 +141,42 @@ class LlmIdeaExtractor:
                     raw_response=raw,
                 )
             VALIDATION_STATS.record(self.client.model, success=True)
+
+            confirmed = [
+                a
+                for a in parsed.affirmations
+                if a.statut == "confirme_par_le_document"
+            ]
+            needs_second = self.two_pass_extraction and (
+                not confirmed or parsed.document_status == "a_revoir_manuellement"
+            )
+            if needs_second:
+                from pipeline.quality_report import EXTRACTION_QUALITY
+
+                EXTRACTION_QUALITY.record_two_pass()
+                descriptive = self._run_descriptive_pass(
+                    query,
+                    title,
+                    sample,
+                    matches,
+                    source=source,
+                    cote=cote,
+                    date=date,
+                )
+                if descriptive is not None and descriptive.affirmations:
+                    parsed = self._merge_pass_results(parsed, descriptive)
+
+            from pipeline.quality_report import EXTRACTION_QUALITY
+
+            for claim in parsed.affirmations:
+                EXTRACTION_QUALITY.record_claim(
+                    confirmed=claim.statut == "confirme_par_le_document"
+                )
+
             body = render_analyze_markdown(parsed)
-            needs_review = parsed.document_status == "a_revoir_manuellement"
+            needs_review = parsed.document_status == "a_revoir_manuellement" or not any(
+                a.statut == "confirme_par_le_document" for a in parsed.affirmations
+            )
             return LlmExtraction(
                 body=body,
                 model=self.client.model,
@@ -127,7 +199,96 @@ class LlmIdeaExtractor:
                 prompt_version=self.prompt.version,
             )
 
-    def _retry_json_if_needed(self, raw: str, user_prompt: str) -> str:
+    def _run_descriptive_pass(
+        self,
+        query: str,
+        title: str,
+        sample: str,
+        matches: list[KeywordMatch],
+        *,
+        source: str | None,
+        cote: str | None,
+        date: str | None,
+    ) -> AnalyzeDocumentResult | None:
+        """Second pass: descriptive mentions only (always statut=insuffisant)."""
+        logger.info("Second-pass descriptive extraction for %r", title)
+        user_prompt = self._build_prompt(
+            self.descriptive_prompt,
+            query,
+            title,
+            sample,
+            matches,
+            source=source,
+            cote=cote,
+            date=date,
+        )
+        try:
+            raw = self.client.complete(
+                user_prompt,
+                system=self.descriptive_prompt.system,
+                operation="analyse_descriptive",
+            )
+            raw = self._retry_json_if_needed(
+                raw, user_prompt, self.descriptive_prompt.system
+            )
+            parsed = validate_analyze_response(raw, document_text=sample)
+            # Force tier-C: never promote descriptive-pass claims.
+            forced: list[Affirmation] = []
+            for claim in parsed.affirmations:
+                forced.append(
+                    claim.model_copy(update={"statut": "insuffisant"})
+                )
+            return parsed.model_copy(
+                update={
+                    "affirmations": forced,
+                    "document_status": (
+                        "ok"
+                        if forced
+                        else parsed.document_status
+                    ),
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Descriptive pass failed for %r: %s", title, exc)
+            return None
+
+    @staticmethod
+    def _merge_pass_results(
+        strict: AnalyzeDocumentResult,
+        descriptive: AnalyzeDocumentResult,
+    ) -> AnalyzeDocumentResult:
+        """Keep confirmed claims from pass 1; append unique descriptive pistes."""
+        seen_cits = {
+            (a.citation_exacte or "").casefold().strip() for a in strict.affirmations
+        }
+        merged = list(strict.affirmations)
+        for claim in descriptive.affirmations:
+            key = (claim.citation_exacte or "").casefold().strip()
+            if key and key in seen_cits:
+                continue
+            if key:
+                seen_cits.add(key)
+            merged.append(claim)
+        status = strict.document_status
+        if any(a.statut == "confirme_par_le_document" for a in merged):
+            status = "ok"
+        return strict.model_copy(
+            update={
+                "affirmations": merged,
+                "document_status": status,
+                "limites": (
+                    (strict.limites or "")
+                    + (
+                        " | Passe descriptive: "
+                        + (descriptive.limites or "mentions littérales ajoutées")
+                        if descriptive.affirmations
+                        else ""
+                    )
+                ).strip(" |"),
+            }
+        )
+
+    def _retry_json_if_needed(self, raw: str, user_prompt: str, system: str) -> str:
         """One repair pass when the model returned non-JSON / empty content."""
         try:
             extract_json_payload(raw)
@@ -144,7 +305,7 @@ class LlmIdeaExtractor:
         try:
             return self.client.complete(
                 repair,
-                system=self.prompt.system,
+                system=system,
                 operation="analyse_repair",
             )
         except Exception as exc:  # noqa: BLE001
@@ -153,6 +314,7 @@ class LlmIdeaExtractor:
 
     def _build_prompt(
         self,
+        prompt,
         query: str,
         title: str,
         sample: str,
@@ -170,7 +332,7 @@ class LlmIdeaExtractor:
                 lines.append(f"- {truncate(match.excerpt, 300)}{page}")
             lines.append("</matches>")
             matches_block = "\n".join(lines)
-        return self.prompt.render_user(
+        return prompt.render_user(
             query=query,
             title=title,
             document_text=sample,
@@ -213,5 +375,4 @@ class LlmIdeaExtractor:
                     chunks.append(f"[Page {page.number}]\n{page.text}")
             body = "\n\n".join(chunks) if chunks else text.full_text
 
-        budget = max(500, self.max_chars - len(lead))
         return (lead + body)[: self.max_chars] if lead else body[: self.max_chars]

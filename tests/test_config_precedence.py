@@ -95,3 +95,39 @@ def test_nested_llm_block(tmp_path: Path):
     assert cfg.llm_thinking_extraction is False
     assert cfg.llm_thinking_synthesis is True
     assert cfg.ollama_timeout == 123.0
+
+
+def test_nested_analyse_synthesis_policies(tmp_path: Path):
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps(
+            {
+                "analyse": {"auto_ocr": True, "two_pass_extraction": True},
+                "synthesis": {
+                    "facts_mode": "strict",
+                    "verify_nli": False,
+                    "verify_cove": True,
+                    "nli_llm": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    assert cfg.auto_ocr is True
+    assert cfg.two_pass_extraction is True
+    assert cfg.synthesis_facts_mode == "strict"
+    assert cfg.synthesis_verify_nli is False
+    assert cfg.synthesis_verify_cove is True
+    assert cfg.synthesis_nli_llm is True
+
+
+def test_resolve_facts_mode_aliases():
+    from config import Config, resolve_facts_mode
+
+    cfg = Config(synthesis_facts_mode="tiered")
+    assert resolve_facts_mode(cfg) == "tiered"
+    assert resolve_facts_mode(cfg, allow_single_source_facts=True) == "all"
+    assert resolve_facts_mode(cfg, legacy_corroboration=True) == "strict"
+    assert resolve_facts_mode(cfg, facts_mode="all") == "all"
+

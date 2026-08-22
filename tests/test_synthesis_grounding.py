@@ -48,10 +48,11 @@ def _claim(**kwargs) -> GroundedClaimForSynthesis:
     return GroundedClaimForSynthesis(**base)
 
 
-def test_synthesize_claims_prompt_is_v2():
+def test_synthesize_claims_prompt_is_v3():
     prompt = load_prompt("synthesize_claims")
-    assert prompt.version >= 2
+    assert prompt.version >= 3
     assert "grounded_claims" in prompt.user_template
+    assert "faits_documentes" in prompt.system
     assert "[0]" in prompt.system or "0]" in prompt.system
 
 

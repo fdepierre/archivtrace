@@ -361,7 +361,7 @@ archivtrace/
 ├── collecte.py                  # CLI collecte — ne contient pas de logique métier
 ├── analyse.py                   # CLI analyse LLM (tâche : extraction)
 ├── synthesize.py                # CLI synthèse / contexte (tâche : synthesis)
-├── verify.py                    # Vérification optionnelle post-synthèse (NLI / CoVe)
+├── verify.py                    # Déprécié — NLI/CoVe via synthesize + config.json
 ├── config.py                    # Objet Config typé (dataclass)
 ├── config.json                  # Paramètres LLM / pipeline (JSONC ; bloc llm imbriqué)
 ├── models.py                    # Tous les modèles de données (dataclasses + enums)
@@ -750,7 +750,7 @@ Options :
 - `--allow-single-source-facts` — désactive la règle des 2 sources (debug)
 - NLI **actif par défaut** (entailment déterministe ; `--nli-llm` ; `--no-nli`)
 - `--verify-cove` — Chain-of-Verification contre la citation (coût LLM +)
-- Script dédié : `python verify.py --input …_analyse….md [--synthesis …] [--verify-cove]`
+- NLI/CoVe : politiques `synthesis.*` dans `config.json` (appliquées par `synthesize.py`). `verify.py` reste disponible mais est **déprécié**.
 
 Modules : `pipeline/corroboration_checker.py`, `pipeline/source_criticism.py`,
 `pipeline/nli_verifier.py`, `pipeline/cove_verifier.py`, `pipeline/verification_pipeline.py`.
@@ -868,6 +868,24 @@ futur service en ligne). La résolution passe par
 
 Si un modèle configuré manque localement, la gateway avertit et bascule sur
 `fallback_model` au lieu de planter.
+
+
+
+### Politiques analyse / synthèse (`config.json`)
+
+Pour l’usage quotidien, préférez éditer `config.json` plutôt que d’empiler des flags :
+
+```jsonc
+"analyse": { "auto_ocr": false, "two_pass_extraction": false },
+"synthesis": {
+  "facts_mode": "tiered",   // tiered | strict | all
+  "verify_nli": true,
+  "verify_cove": false,
+  "nli_llm": false
+}
+```
+
+API appelable (futur front) : `pipeline.run_api.run_synthesize`.
 
 ### `config.json` — paramètres persistants (JSONC)
 

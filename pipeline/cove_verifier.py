@@ -177,6 +177,7 @@ def apply_cove_to_synthesis(
     return (
         SynthesisOutput(
             faits_etablis=kept_facts,
+            faits_documentes=list(output.faits_documentes),
             chronologie=output.chronologie,
             points_a_verifier=demoted,
             plan_article=output.plan_article,

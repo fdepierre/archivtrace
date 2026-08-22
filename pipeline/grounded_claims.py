@@ -9,7 +9,7 @@ from xml.sax.saxutils import escape
 from pipeline.markdown_reader import ParsedCollection, ParsedSource
 from pipeline.prompt_schemas import (
     AnalyzeDocumentResult,
-    citation_found_in_document,
+    citation_match_quality,
     extract_claims_from_llm_ideas,
 )
 from pipeline.source_classifier import classify_source_heuristic
@@ -39,6 +39,10 @@ class GroundedClaimForSynthesis:
     sincerite: str = "indetermine"
     score_confiance: float | None = None
     corroboration_ok: bool | None = None
+    # exact | fuzzy — OCR-tolerant grounding never auto-promotes to multi-source alone.
+    citation_match: str = "exact"
+    # corroborated | documented — set by apply_corroboration.
+    promotion_tier: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,23 +157,28 @@ def collect_grounded_claims(
                     )
                 )
                 continue
-            if blob and not citation_found_in_document(claim.citation_exacte, blob):
-                logger.info(
-                    "Claim %s citation not found in source blob — keeping as unverified",
-                    cid,
-                )
-                unverified.append(
-                    UnverifiedClaimForSynthesis(
-                        claim_id=cid,
-                        source_id=source.index,
-                        source_title=source.title,
-                        reason="citation_non_retrouvee_dans_source",
-                        affirmation=claim.affirmation,
-                        citation_exacte=claim.citation_exacte,
-                        theme=claim.theme,
+            match_kind = "exact"
+            if blob:
+                match_kind, score = citation_match_quality(claim.citation_exacte, blob)
+                if match_kind == "none":
+                    logger.info(
+                        "Claim %s citation not found in source blob "
+                        "(best_overlap=%.2f) — keeping as unverified",
+                        cid,
+                        score,
                     )
-                )
-                continue
+                    unverified.append(
+                        UnverifiedClaimForSynthesis(
+                            claim_id=cid,
+                            source_id=source.index,
+                            source_title=source.title,
+                            reason="citation_non_retrouvee_dans_source",
+                            affirmation=claim.affirmation,
+                            citation_exacte=claim.citation_exacte,
+                            theme=claim.theme,
+                        )
+                    )
+                    continue
 
             rec = catalog_by_id[source.index]
             poids = claim.poids_preuve
@@ -178,6 +187,10 @@ def collect_grounded_claims(
             temoignage = poids.temoignage
             if temoignage == "indetermine" and rec.temoignage_probable:
                 temoignage = rec.temoignage_probable
+            conf = _confidence_score(claim.niveau_confiance)
+            # Fuzzy OCR matches cap confidence slightly (still tier-B eligible).
+            if match_kind == "fuzzy":
+                conf = min(conf, 0.75)
             grounded.append(
                 GroundedClaimForSynthesis(
                     claim_id=cid,
@@ -189,11 +202,12 @@ def collect_grounded_claims(
                     citation_exacte=claim.citation_exacte.strip(),
                     affirmation=claim.affirmation.strip(),
                     theme=claim.theme,
-                    confidence=_confidence_score(claim.niveau_confiance),
+                    confidence=conf,
                     status=claim.statut,
                     temoignage=temoignage,
                     sincerite=poids.sincerite,
-                    score_confiance=_confidence_score(claim.niveau_confiance),
+                    score_confiance=conf,
+                    citation_match=match_kind,
                 )
             )
 
@@ -211,8 +225,12 @@ def render_grounded_claims_xml(claims: list[GroundedClaimForSynthesis]) -> str:
         return "<grounded_claims>\n</grounded_claims>"
     lines = ["<grounded_claims>"]
     for claim in claims:
+        tier = claim.promotion_tier or (
+            "corroborated" if claim.corroboration_ok else "documented"
+        )
         lines.append(
-            f'  <claim id="{escape(claim.claim_id)}" source_id="{claim.source_id}">'
+            f'  <claim id="{escape(claim.claim_id)}" source_id="{claim.source_id}" '
+            f'tier="{escape(tier)}" citation_match="{escape(claim.citation_match)}">'
         )
         lines.append(f"    <source_title>{escape(claim.source_title)}</source_title>")
         if claim.source_date:
@@ -258,11 +276,10 @@ NO_GROUNDED_CLAIMS_MARKDOWN = """## Synthèse
 Aucune synthèse narrative produite : le corpus ne contient pas encore \
 d'affirmations suffisamment ancrées dans des citations vérifiées \
 (`statut=confirme_par_le_document`, citation non vide, source utilisable \
-comme preuve), **ou** aucune famille de faits n'atteint la corroboration \
-multi-sources (au moins deux sources indépendantes).
+comme preuve).
 
-Les claims à source unique restent en « Hypothèses et vérifications à mener » \
-avec le motif `corroboration_insuffisante`.
+Les pistes non confirmées restent en « Hypothèses et vérifications à mener ».
 
-Relancer `analyse.py` sur d'autres documents du corpus, puis `synthesize.py`.
+Relancer `analyse.py` (idéalement avec `--enable-ocr` / `--auto-ocr` et \
+`--two-pass-extraction` si besoin) sur d'autres documents, puis `synthesize.py`.
 """

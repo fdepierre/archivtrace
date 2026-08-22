@@ -22,3 +22,26 @@ def test_keyword_variants_are_unique_and_ordered():
     assert variants[0] == "Rochecardon"
     assert len(variants) == len(set(variants))
     assert "rochecardon" in variants
+
+
+def test_keyword_variants_include_hyphen_and_space_forms():
+    variants = keyword_variants("Rochecardon")
+    lowered = {v.casefold() for v in variants}
+    assert "roche-cardon" in lowered
+    assert "roche cardon" in lowered
+    assert "rochecardon" in lowered
+
+
+def test_keyword_variants_from_hyphenated_query():
+    variants = keyword_variants("Roche-Cardon")
+    lowered = {v.casefold() for v in variants}
+    assert "roche-cardon" in lowered
+    assert "roche cardon" in lowered
+    assert "rochecardon" in lowered
+
+
+def test_keyword_variants_accented_toponym():
+    variants = keyword_variants("Rochécardon")
+    lowered = {strip_accents(v).casefold() for v in variants}
+    assert "rochecardon" in lowered
+    assert "roche-cardon" in lowered

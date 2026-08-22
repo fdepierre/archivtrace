@@ -38,6 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Define the CLI surface. Defaults are None so config.json can fill them."""
     parser = argparse.ArgumentParser(
         prog="collecte",
+        epilog="OCR / catalog / timeouts : config.json ou flags avances.",
         description="Collecte documentaire orientée recherche (sortie Markdown).",
     )
     source = parser.add_mutually_exclusive_group(required=True)

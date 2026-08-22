@@ -55,6 +55,15 @@ DEFAULT_LLM_THINKING_EXTRACTION = False
 # Off by default: qwen3.5 thinking often consumes the budget and skips the
 # required structured JSON fences; enable explicitly for experiments.
 DEFAULT_LLM_THINKING_SYNTHESIS = False
+# When True, analyse re-tries empty native text with PaddleOCR automatically.
+DEFAULT_AUTO_OCR = False
+# When True, analyse runs a descriptive second pass on empty/review results.
+DEFAULT_TWO_PASS_EXTRACTION = False
+# Synthesis claim promotion: tiered | strict | all.
+DEFAULT_SYNTHESIS_FACTS_MODE = "tiered"
+DEFAULT_SYNTHESIS_VERIFY_NLI = True
+DEFAULT_SYNTHESIS_VERIFY_COVE = False
+DEFAULT_SYNTHESIS_NLI_LLM = False
 
 
 @dataclass(slots=True)
@@ -74,6 +83,8 @@ class Config:
     max_excerpts: int = 5
     environment: str = "local"
     enable_ocr: bool = False
+    auto_ocr: bool = DEFAULT_AUTO_OCR
+    two_pass_extraction: bool = DEFAULT_TWO_PASS_EXTRACTION
     ocr_lang: str = "fra"
     ocr_dpi: int = 200
     catalog_search_url: str | None = None
@@ -100,6 +111,10 @@ class Config:
     llm_fallback_model: str = DEFAULT_LLM_FALLBACK_MODEL
     llm_thinking_extraction: bool = DEFAULT_LLM_THINKING_EXTRACTION
     llm_thinking_synthesis: bool = DEFAULT_LLM_THINKING_SYNTHESIS
+    synthesis_facts_mode: str = DEFAULT_SYNTHESIS_FACTS_MODE
+    synthesis_verify_nli: bool = DEFAULT_SYNTHESIS_VERIFY_NLI
+    synthesis_verify_cove: bool = DEFAULT_SYNTHESIS_VERIFY_COVE
+    synthesis_nli_llm: bool = DEFAULT_SYNTHESIS_NLI_LLM
     extra_headers: dict[str, str] = field(default_factory=dict)
 
     def headers(self) -> dict[str, str]:
@@ -120,3 +135,24 @@ class Config:
         if not updates:
             return self
         return replace(self, **updates)  # type: ignore[arg-type]
+
+
+def resolve_facts_mode(
+    cfg: "Config",
+    *,
+    facts_mode: str | None = None,
+    allow_single_source_facts: bool = False,
+    legacy_corroboration: bool = False,
+) -> str:
+    """Resolve claim promotion mode: CLI aliases > explicit > config > default."""
+    if facts_mode:
+        mode = facts_mode.strip().lower()
+    elif allow_single_source_facts:
+        mode = "all"
+    elif legacy_corroboration:
+        mode = "strict"
+    else:
+        mode = (cfg.synthesis_facts_mode or DEFAULT_SYNTHESIS_FACTS_MODE).strip().lower()
+    if mode not in {"tiered", "strict", "all"}:
+        return DEFAULT_SYNTHESIS_FACTS_MODE
+    return mode

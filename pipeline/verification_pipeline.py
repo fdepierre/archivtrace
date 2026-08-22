@@ -74,7 +74,7 @@ def run_verification(
     }
     cove_by_ids = {r.claim_ids: r for r in cove_results}
     assessments: list[FactAssessment] = []
-    for fact in cove_out.faits_etablis:
+    for fact in list(cove_out.faits_etablis) + list(cove_out.faits_documentes):
         key = tuple(fact.claim_ids)
         score, gate, nli_label = by_claim_score.get(key, (0.7, "alerte", None))
         cove = cove_by_ids.get(key)
@@ -96,8 +96,9 @@ def run_verification(
         )
 
     logger.info(
-        "Verification: %d fait(s) retained (nli=%s cove=%s)",
+        "Verification: %d corroboré(s), %d documenté(s) retained (nli=%s cove=%s)",
         len(cove_out.faits_etablis),
+        len(cove_out.faits_documentes),
         enable_nli,
         enable_cove,
     )

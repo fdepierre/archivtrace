@@ -54,3 +54,16 @@ Before running or debugging CLI commands, follow:
 - `.cursor/skills/extract-archives-workflow/SKILL.md`
 
 Project rule (always on): `.cursor/rules/cross-platform.mdc`.
+
+## CLI vs config (UX)
+
+Daily workflow uses short intention flags (`--query`, `--input`, `--connector`, `--mode`).
+Policies live in `config.json`:
+
+- `analyse.auto_ocr` / `analyse.two_pass_extraction`
+- `synthesis.facts_mode` (`tiered` | `strict` | `all`)
+- `synthesis.verify_nli` / `synthesis.verify_cove` / `synthesis.nli_llm`
+
+`verify.py` is deprecated; synthesis applies NLI/CoVe from config.
+Callable API: `pipeline.run_api.run_analyse` / `run_synthesize` (future web UI).
+

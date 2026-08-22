@@ -361,7 +361,7 @@ archivtrace/
 ├── collecte.py                  # Collection CLI — contains no business logic
 ├── analyse.py                   # Per-document LLM analysis CLI (task: extraction)
 ├── synthesize.py                # Synthesis / writing-context CLI (task: synthesis)
-├── verify.py                    # Optional post-synthesis verification (NLI / CoVe)
+├── verify.py                    # Deprecated — NLI/CoVe via synthesize + config.json
 ├── config.py                    # Typed Config object (dataclass)
 ├── config.json                  # LLM / pipeline settings (JSONC; nested llm block)
 ├── models.py                    # All data models (dataclasses + enums)
@@ -763,7 +763,7 @@ Optional post-checks:
 - `--allow-single-source-facts` — disable the 2-source rule (debug / exploratory)
 - NLI filter **on by default** (deterministic entailment; `--nli-llm` for LLM labels; `--no-nli` to disable)
 - `--verify-cove` — Chain-of-Verification against the citation (extra LLM cost)
-- Standalone re-check: `python verify.py --input …_analyse….md [--synthesis …_synthese.md] [--verify-cove]`
+- NLI/CoVe: `synthesis.*` policies in `config.json` (applied by `synthesize.py`). `verify.py` remains available but is **deprecated**.
 
 Related modules: `pipeline/corroboration_checker.py`, `pipeline/source_criticism.py`,
 `pipeline/nli_verifier.py`, `pipeline/cove_verifier.py`, `pipeline/verification_pipeline.py`.
@@ -876,6 +876,24 @@ later feed an online service). Resolution goes through
 
 If a configured model is missing locally, the gateway warns and falls back to
 `fallback_model` instead of crashing.
+
+
+
+### Analyse / synthesis policies (`config.json`)
+
+For daily use, prefer editing `config.json` over stacking CLI flags:
+
+```jsonc
+"analyse": { "auto_ocr": false, "two_pass_extraction": false },
+"synthesis": {
+  "facts_mode": "tiered",   // tiered | strict | all
+  "verify_nli": true,
+  "verify_cove": false,
+  "nli_llm": false
+}
+```
+
+Callable API (future UI): `pipeline.run_api.run_synthesize`.
 
 ### `config.json` — persistent settings (JSONC)
 

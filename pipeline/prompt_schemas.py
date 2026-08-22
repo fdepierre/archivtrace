@@ -134,6 +134,8 @@ class SynthesisOutput(BaseModel):
     """Strict JSON-only synthesis payload (prompt synthesize_claims v2+)."""
 
     faits_etablis: list[SynthesisFact] = Field(default_factory=list)
+    # Single-source, citation-backed facts (tier B — research notebook).
+    faits_documentes: list[SynthesisFact] = Field(default_factory=list)
     chronologie: list[SynthesisTimelineEvent] = Field(default_factory=list)
     points_a_verifier: list[SynthesisVerificationPoint] = Field(default_factory=list)
     plan_article: list[str] = Field(default_factory=list)
@@ -204,6 +206,11 @@ def extract_json_payload(text: str) -> Any:
     ) from last_error
 
 
+# Minimum token overlap for OCR-tolerant citation grounding (tier B eligible).
+DEFAULT_FUZZY_CITATION_THRESHOLD = 0.85
+_CITATION_TOKEN_RE = re.compile(r"[a-z0-9]{2,}", re.I)
+
+
 def _normalize_for_citation(text: str) -> str:
     text = (
         text.replace("\u2019", "'")
@@ -224,6 +231,76 @@ def citation_found_in_document(citation: str, document_text: str) -> bool:
         return True
     # Allow minor OCR glue (missing spaces) by removing spaces.
     return cit.replace(" ", "") in doc.replace(" ", "")
+
+
+def _citation_tokens(text: str) -> list[str]:
+    """Accent-stripped tokens for fuzzy OCR citation matching."""
+    from utils.strings import normalize, strip_accents
+
+    norm = strip_accents(normalize(text or ""))
+    return _CITATION_TOKEN_RE.findall(norm)
+
+
+def citation_match_quality(
+    citation: str,
+    document_text: str,
+    *,
+    min_token_overlap: float = DEFAULT_FUZZY_CITATION_THRESHOLD,
+) -> tuple[str, float]:
+    """Return ``(kind, score)`` where kind is ``exact``, ``fuzzy``, or ``none``.
+
+    Exact substring (whitespace / space-glue tolerant) scores 1.0. Otherwise a
+    sliding-window Jaccard over citation tokens accepts OCR drift when the best
+    window overlap is ≥ ``min_token_overlap``.
+    """
+    if not citation or not document_text:
+        return "none", 0.0
+    if citation_found_in_document(citation, document_text):
+        return "exact", 1.0
+
+    cit_toks = _citation_tokens(citation)
+    if len(cit_toks) < 3:
+        return "none", 0.0
+    doc_toks = _citation_tokens(document_text)
+    if not doc_toks:
+        return "none", 0.0
+
+    cit_set = frozenset(cit_toks)
+    doc_set = frozenset(doc_toks)
+    coverage = len(cit_set & doc_set) / len(cit_set) if cit_set else 0.0
+
+    win = max(len(cit_toks), int(len(cit_toks) * 1.5))
+    best = coverage
+    if len(doc_toks) <= win:
+        window = frozenset(doc_toks)
+        union = len(cit_set | window)
+        best = max(best, (len(cit_set & window) / union) if union else 0.0)
+    else:
+        step = max(1, win // 4)
+        for i in range(0, len(doc_toks) - win + 1, step):
+            window = frozenset(doc_toks[i : i + win])
+            union = len(cit_set | window)
+            score = (len(cit_set & window) / union) if union else 0.0
+            if score > best:
+                best = score
+
+    best = round(best, 3)
+    if best >= min_token_overlap:
+        return "fuzzy", best
+    return "none", best
+
+
+def citation_found_in_document_fuzzy(
+    citation: str,
+    document_text: str,
+    *,
+    min_token_overlap: float = DEFAULT_FUZZY_CITATION_THRESHOLD,
+) -> tuple[bool, float]:
+    """True when citation matches exactly or via fuzzy OCR-tolerant overlap."""
+    kind, score = citation_match_quality(
+        citation, document_text, min_token_overlap=min_token_overlap
+    )
+    return kind in {"exact", "fuzzy"}, score
 
 
 def _normalize_analyze_payload(payload: Any) -> Any:
@@ -307,13 +384,24 @@ def validate_analyze_response(
     grounded: list[Affirmation] = []
     for claim in result.affirmations:
         if claim.statut == "confirme_par_le_document":
-            if not citation_found_in_document(claim.citation_exacte, document_text):
+            kind, score = citation_match_quality(
+                claim.citation_exacte, document_text
+            )
+            if kind == "none":
+                from pipeline.quality_report import EXTRACTION_QUALITY
+
+                EXTRACTION_QUALITY.record_citation_match("none")
                 logger.warning(
-                    "Downgrading claim: citation not found in document: %r",
+                    "Downgrading claim: citation not found in document "
+                    "(best_overlap=%.2f): %r",
+                    score,
                     claim.citation_exacte[:120],
                 )
                 claim = claim.model_copy(update={"statut": "insuffisant"})
             else:
+                from pipeline.quality_report import EXTRACTION_QUALITY
+
+                EXTRACTION_QUALITY.record_citation_match(kind)
                 affirmation_l = claim.affirmation.casefold()
                 citation_l = claim.citation_exacte.casefold()
                 if "usine toxique" in affirmation_l and "usine toxique" not in citation_l:
@@ -562,6 +650,13 @@ def _normalize_synthesis_v2_payload(payload: Any) -> dict[str, Any]:
     # Alias tolerance
     if "faits_etablis" not in data and "facts" in data:
         data["faits_etablis"] = data["facts"]
+    if "faits_documentes" not in data:
+        for alt in ("faits_documentes_source_unique", "documented_facts", "faits_uniques"):
+            if alt in data:
+                data["faits_documentes"] = data[alt]
+                break
+    if "faits_documentes" not in data:
+        data["faits_documentes"] = []
     chronologie = data.get("chronologie") or []
     if isinstance(chronologie, list):
         fixed = []
@@ -600,7 +695,7 @@ def validate_synthesis_output(
     grounded_claims: list[Any],
     known_source_ids: set[int],
 ) -> SynthesisOutput:
-    """Validate synthesize_claims v2 JSON against corpus claim/source contracts.
+    """Validate synthesize_claims v2/v3 JSON against corpus claim/source contracts.
 
     ``grounded_claims`` items must expose ``claim_id`` and ``source_id``.
     """
@@ -620,31 +715,35 @@ def validate_synthesis_output(
             # Allow only if also covered by [S:n] nearby — bare [n] is forbidden.
             errors.append(f"{label}: référence nue interdite {match.group(0)} (exiger [S:n])")
 
-    for idx, fact in enumerate(result.faits_etablis):
-        label = f"faits_etablis[{idx}]"
-        _check_forbidden(label, fact.texte)
-        text_ids = _ids_in_s_refs(fact.texte)
-        if not text_ids:
-            errors.append(f"{label}: texte sans ancre [S:n]")
-        if any(sid <= 0 for sid in fact.sources):
-            errors.append(f"{label}: source id <= 0")
-        for sid in fact.sources:
-            if sid not in known_source_ids:
-                errors.append(f"{label}: source inconnue {sid}")
-        if set(text_ids) != set(fact.sources):
-            errors.append(
-                f"{label}: [S:n] dans le texte {text_ids} ≠ sources {fact.sources}"
-            )
-        for cid in fact.claim_ids:
-            claim = claim_by_id.get(cid)
-            if claim is None:
-                errors.append(f"{label}: claim_id inconnu {cid}")
-                continue
-            if claim.source_id not in fact.sources:
+    def _check_fact_list(section: str, facts: list[SynthesisFact]) -> None:
+        for idx, fact in enumerate(facts):
+            label = f"{section}[{idx}]"
+            _check_forbidden(label, fact.texte)
+            text_ids = _ids_in_s_refs(fact.texte)
+            if not text_ids:
+                errors.append(f"{label}: texte sans ancre [S:n]")
+            if any(sid <= 0 for sid in fact.sources):
+                errors.append(f"{label}: source id <= 0")
+            for sid in fact.sources:
+                if sid not in known_source_ids:
+                    errors.append(f"{label}: source inconnue {sid}")
+            if set(text_ids) != set(fact.sources):
                 errors.append(
-                    f"{label}: claim {cid} (source {claim.source_id}) "
-                    f"absent de sources {fact.sources}"
+                    f"{label}: [S:n] dans le texte {text_ids} ≠ sources {fact.sources}"
                 )
+            for cid in fact.claim_ids:
+                claim = claim_by_id.get(cid)
+                if claim is None:
+                    errors.append(f"{label}: claim_id inconnu {cid}")
+                    continue
+                if claim.source_id not in fact.sources:
+                    errors.append(
+                        f"{label}: claim {cid} (source {claim.source_id}) "
+                        f"absent de sources {fact.sources}"
+                    )
+
+    _check_fact_list("faits_etablis", result.faits_etablis)
+    _check_fact_list("faits_documentes", result.faits_documentes)
 
     for idx, event in enumerate(result.chronologie):
         label = f"chronologie[{idx}]"

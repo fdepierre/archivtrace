@@ -15,7 +15,7 @@ import difflib
 import re
 
 from models import ExtractedText, KeywordMatch, MatchMode, MatchType
-from utils.strings import normalize, strip_accents
+from utils.strings import collapse_whitespace, normalize, strip_accents
 
 _WORD_RE = re.compile(r"\w+", re.UNICODE)
 
@@ -80,27 +80,43 @@ class KeywordMatcher:
     def _find_normalized(self, text: str, page: int | None) -> list[KeywordMatch]:
         """Search on an accent/case-folded copy, mapping spans back to the original.
 
-        `strip_accents` preserves length (it removes combining marks but keeps a
-        1:1 character mapping for the base letters we care about here), so spans
-        computed on the folded text map directly onto the source text.
+        Tries every structural variant needle (hyphen / space / glued / toponym
+        splits). ``strip_accents`` preserves length for the base letters we care
+        about, so spans on the folded text map onto the source text.
         """
         folded = strip_accents(text).lower()
-        needle = normalize(self.keyword)
-        if not needle:
+        needles: list[str] = []
+        seen_needles: set[str] = set()
+        for variant in self.variants:
+            needle = normalize(variant)
+            # Also try a hyphen-stripped form so "roche-cardon" hits "rochecardon"
+            # body text and the reverse via explicit variants.
+            for candidate in (needle, needle.replace("-", ""), needle.replace("-", " ")):
+                candidate = collapse_whitespace(candidate) if " " in candidate else candidate
+                if candidate and candidate not in seen_needles:
+                    seen_needles.add(candidate)
+                    needles.append(candidate)
+        if not needles:
             return []
+
         matches: list[KeywordMatch] = []
-        start = 0
-        while True:
-            index = folded.find(needle, start)
-            if index == -1:
-                break
-            end = index + len(needle)
-            match_type = (
-                MatchType.EXACT if text[index:end] == self.keyword else MatchType.NORMALIZED
-            )
-            matches.append(self._build_match(text, index, end, match_type, 0.95, page))
-            start = end
-        return matches
+        for needle in needles:
+            start = 0
+            while True:
+                index = folded.find(needle, start)
+                if index == -1:
+                    break
+                end = index + len(needle)
+                match_type = (
+                    MatchType.EXACT
+                    if text[index:end] == self.keyword
+                    else MatchType.NORMALIZED
+                )
+                matches.append(
+                    self._build_match(text, index, end, match_type, 0.95, page)
+                )
+                start = end
+        return self._dedupe(matches)
 
     # -- fuzzy -----------------------------------------------------------
     def _find_fuzzy(self, text: str, page: int | None) -> list[KeywordMatch]:

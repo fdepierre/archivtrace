@@ -9,6 +9,7 @@ from __future__ import annotations
 from pipeline.prompt_loader import load_prompt
 
 _ANALYZE = load_prompt("analyze_document")
+_ANALYZE_DESC = load_prompt("analyze_document_descriptive")
 _SYNTHESIS = load_prompt("synthesize_claims")
 _ARTICLE = load_prompt("article_context")
 _CLASSIFY = load_prompt("classify_source")
@@ -20,12 +21,14 @@ ARTICLE_CONTEXT_SYSTEM = _ARTICLE.system
 CLASSIFY_SOURCE_SYSTEM = _CLASSIFY.system
 
 ANALYZE_DOCUMENT_PROMPT = _ANALYZE
+ANALYZE_DOCUMENT_DESCRIPTIVE_PROMPT = _ANALYZE_DESC
 SYNTHESIZE_CLAIMS_PROMPT = _SYNTHESIS
 ARTICLE_CONTEXT_PROMPT = _ARTICLE
 CLASSIFY_SOURCE_PROMPT = _CLASSIFY
 
 PROMPT_VERSIONS = {
     _ANALYZE.id: _ANALYZE.version,
+    _ANALYZE_DESC.id: _ANALYZE_DESC.version,
     _SYNTHESIS.id: _SYNTHESIS.version,
     _ARTICLE.id: _ARTICLE.version,
     _CLASSIFY.id: _CLASSIFY.version,

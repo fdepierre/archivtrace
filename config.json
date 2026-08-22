@@ -118,6 +118,18 @@
 
   // "ocr_lang": "fra"
 
+  ,
+  // --- Analyse / synthesis policies (daily knobs — prefer editing here) ------
+  "analyse": {
+    "auto_ocr": false,
+    "two_pass_extraction": false
+  },
+  "synthesis": {
+    // tiered | strict | all
+    "facts_mode": "tiered",
+    "verify_nli": true,
+    "verify_cove": false,
+    "nli_llm": false
+  }
+
 }
-
-

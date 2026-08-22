@@ -82,7 +82,7 @@ def test_jaccard_and_independence():
     assert sources_are_independent(1, 3, by_id) is False
 
 
-def test_single_source_demoted_by_corroboration():
+def test_single_source_demoted_by_strict_corroboration():
     grounded = [_claim()]
     catalog = [
         SourceRecord(
@@ -98,10 +98,36 @@ def test_single_source_demoted_by_corroboration():
             utilisable_comme_preuve=True,
         )
     ]
-    kept, demoted = apply_corroboration(grounded, [], catalog)
+    kept, demoted = apply_corroboration(
+        grounded, [], catalog, promotion_mode="strict"
+    )
     assert kept == []
     assert len(demoted) == 1
     assert demoted[0].reason == "corroboration_insuffisante"
+
+
+def test_single_source_kept_as_documented_in_tiered_mode():
+    grounded = [_claim()]
+    catalog = [
+        SourceRecord(
+            id=1,
+            titre="Doc A",
+            type_document="registre",
+            date="1846",
+            periode_couverte=None,
+            auteur_ou_institution=None,
+            cote_ou_identifiant="x",
+            url="https://a",
+            connecteur="archives_rhone",
+            utilisable_comme_preuve=True,
+        )
+    ]
+    kept, demoted = apply_corroboration(
+        grounded, [], catalog, promotion_mode="tiered"
+    )
+    assert len(kept) == 1
+    assert kept[0].promotion_tier == "documented"
+    assert demoted == []
 
 
 def test_two_independent_sources_promoted():

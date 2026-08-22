@@ -95,6 +95,7 @@ class _StubBackend(LlmBackend):
 def test_prompt_files_versioned_and_xml_structured():
     for prompt_id in (
         "analyze_document",
+        "analyze_document_descriptive",
         "synthesize_claims",
         "classify_source",
         "article_context",
@@ -123,6 +124,30 @@ def test_citation_grounding_helper():
         "Produits toxiques, hygiène", GARNIS_EXCERPT
     )
     assert not citation_found_in_document("usine chimique Bayer", GARNIS_EXCERPT)
+
+
+def test_citation_fuzzy_ocr_tolerant():
+    from pipeline.prompt_schemas import (
+        citation_found_in_document_fuzzy,
+        citation_match_quality,
+    )
+
+    # OCR glue / character noise still matches via token overlap.
+    noisy_doc = (
+        "Cette usine de Saint Didier au Mont d Or occupait le chateau "
+        "de Rochecardon. Produits toxiques hygiene"
+    )
+    kind, score = citation_match_quality(
+        "Cette usine de Saint-Didier-au-Mont-d'Or occupait le château de Rochecardon",
+        noisy_doc,
+    )
+    assert kind in {"exact", "fuzzy"}
+    assert score >= 0.85
+    found, _ = citation_found_in_document_fuzzy(
+        "Produits toxiques, hygiène", noisy_doc
+    )
+    assert found is True
+    assert citation_match_quality("Bayer chimique inventé", noisy_doc)[0] == "none"
 
 
 def test_validate_rejects_usine_toxique_without_verbatim():

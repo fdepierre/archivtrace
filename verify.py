@@ -96,7 +96,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--allow-single-source-facts",
         action="store_true",
-        help="Garde les faits à une seule source (désactive corroboration).",
+        help="Traite tous les claims ancrés comme faits corroborés.",
+    )
+    parser.add_argument(
+        "--legacy-corroboration",
+        action="store_true",
+        help="Ancien comportement : exclure les faits à source unique.",
     )
     parser.add_argument("--verbose", action="store_true")
     return parser
@@ -113,13 +118,16 @@ def _parse_source_ids(text: str) -> list[int]:
 
 
 def parse_faits_from_synthesis_markdown(text: str) -> SynthesisOutput:
-    """Best-effort extraction of Faits établis bullets from a synthesis file."""
-    section = re.search(
-        r"(?is)##\s*Faits établis et sourcés\s*\n+(.*?)(?=\n##\s|\Z)",
-        text or "",
-    )
-    facts: list[SynthesisFact] = []
-    if section:
+    """Best-effort extraction of fact bullets from a synthesis file."""
+
+    def _parse_section(heading_pat: str) -> list[SynthesisFact]:
+        section = re.search(
+            rf"(?is)##\s*{heading_pat}\s*\n+(.*?)(?=\n##\s|\Z)",
+            text or "",
+        )
+        out: list[SynthesisFact] = []
+        if not section:
+            return out
         for line in section.group(1).splitlines():
             line = line.strip()
             if not line.startswith(("-", "*")):
@@ -130,18 +138,23 @@ def parse_faits_from_synthesis_markdown(text: str) -> SynthesisOutput:
             if not m:
                 continue
             texte = m.group(1).strip()
-            # Drop trailing italic score annotation if present.
             texte = re.sub(r"\s*_\(score=.+$", "", texte).rstrip("_").strip()
             sources = _parse_source_ids(texte)
             if not sources:
                 continue
-            facts.append(
+            out.append(
                 SynthesisFact(
                     texte=texte,
                     sources=sources,
                     claim_ids=[f"S-{s}" for s in sources],
                 )
             )
+        return out
+
+    facts = _parse_section(r"Faits corroborés[^\n]*")
+    documented = _parse_section(r"Faits documentés[^\n]*")
+    if not facts and not documented:
+        facts = _parse_section(r"Faits établis et sourcés")
     hypo = re.search(
         r"(?is)##\s*Hypothèses et vérifications à mener\s*\n+(.*?)(?=\n##\s|\Z)",
         text or "",
@@ -163,6 +176,7 @@ def parse_faits_from_synthesis_markdown(text: str) -> SynthesisOutput:
             )
     return SynthesisOutput(
         faits_etablis=facts,
+        faits_documentes=documented,
         chronologie=[],
         points_a_verifier=points,
         plan_article=[],
@@ -170,6 +184,10 @@ def parse_faits_from_synthesis_markdown(text: str) -> SynthesisOutput:
 
 
 def main(argv: list[str] | None = None) -> int:
+    print(
+        "AVERTISSEMENT: verify.py est deprecie — preferer synthesize.py (NLI/CoVe via config.json bloc synthesis).",
+        file=sys.stderr,
+    )
     args = build_parser().parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -188,6 +206,13 @@ def main(argv: list[str] | None = None) -> int:
         llm_provider=args.llm,
         llm_base_url=args.ollama_url,
     )
+    if args.allow_single_source_facts:
+        promotion_mode = "all"
+    elif args.legacy_corroboration:
+        promotion_mode = "strict"
+    else:
+        promotion_mode = "tiered"
+
     collection = read_collection(args.input)
     catalog = build_source_catalog(collection)
     grounded_raw, unverified = collect_grounded_claims(collection, catalog)
@@ -195,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
         grounded_raw,
         unverified,
         catalog,
-        require_multi_source=not args.allow_single_source_facts,
+        promotion_mode=promotion_mode,
     )
 
     if args.synthesis and args.synthesis.exists():
@@ -205,36 +230,48 @@ def main(argv: list[str] | None = None) -> int:
         by_source: dict[int, list[str]] = {}
         for claim in grounded:
             by_source.setdefault(claim.source_id, []).append(claim.claim_id)
-        remapped: list[SynthesisFact] = []
-        for fact in output.faits_etablis:
-            cids: list[str] = []
-            for sid in fact.sources:
-                cids.extend(by_source.get(sid, []))
-            if not cids:
-                cids = list(fact.claim_ids)
-            remapped.append(
-                SynthesisFact(texte=fact.texte, sources=fact.sources, claim_ids=cids)
-            )
+
+        def _remap(facts: list[SynthesisFact]) -> list[SynthesisFact]:
+            remapped: list[SynthesisFact] = []
+            for fact in facts:
+                cids: list[str] = []
+                for sid in fact.sources:
+                    cids.extend(by_source.get(sid, []))
+                if not cids:
+                    cids = list(fact.claim_ids)
+                remapped.append(
+                    SynthesisFact(
+                        texte=fact.texte, sources=fact.sources, claim_ids=cids
+                    )
+                )
+            return remapped
+
         output = SynthesisOutput(
-            faits_etablis=remapped,
+            faits_etablis=_remap(output.faits_etablis),
+            faits_documentes=_remap(output.faits_documentes),
             chronologie=output.chronologie,
             points_a_verifier=output.points_a_verifier,
             plan_article=output.plan_article,
         )
         logger.info(
-            "Synthèse lue: %d fait(s), %d hypothèse(s)",
+            "Synthèse lue: %d corroboré(s), %d documenté(s), %d hypothèse(s)",
             len(output.faits_etablis),
+            len(output.faits_documentes),
             len(output.points_a_verifier),
         )
     else:
         syn = Synthesizer(
             llm=None,
-            require_corroboration=not args.allow_single_source_facts,
+            promotion_mode=promotion_mode,
             verify_nli=False,
             verify_cove=False,
         )
         output = syn._deterministic_output_from_claims(grounded, unverified)
-        logger.info("Promotion déterministe: %d fait(s)", len(output.faits_etablis))
+        logger.info(
+            "Promotion déterministe: %d corroboré(s), %d documenté(s)",
+            len(output.faits_etablis),
+            len(output.faits_documentes),
+        )
 
     llm = None
     provider = (args.llm or cfg.llm_provider or "ollama").strip().lower()
@@ -268,7 +305,7 @@ def main(argv: list[str] | None = None) -> int:
 
     synthesizer = Synthesizer(
         llm=None,
-        require_corroboration=not args.allow_single_source_facts,
+        promotion_mode=promotion_mode,
         verify_nli=False,
         verify_cove=False,
     )

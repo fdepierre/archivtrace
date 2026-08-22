@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, replace
+from typing import Literal
 
 from pipeline.grounded_claims import (
     GroundedClaimForSynthesis,
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Significant token overlap to treat two affirmations as the same fact family.
 DEFAULT_JACCARD_THRESHOLD = 0.32
+PromotionMode = Literal["tiered", "strict", "all"]
 _STOPWORDS = frozenset(
     {
         "le",
@@ -176,7 +178,7 @@ def cluster_claims(
         score = _cluster_score(cluster_claims_list, len(independent))
         # Single-source facts stay below the auto-accept band.
         if not ok:
-            score = min(score, 0.55)
+            score = min(score, 0.72)
         annotated = tuple(
             replace(c, score_confiance=score, corroboration_ok=ok)
             for c in cluster_claims_list
@@ -193,20 +195,50 @@ def cluster_claims(
     return result
 
 
+def resolve_promotion_mode(
+    *,
+    promotion_mode: PromotionMode | None = None,
+    require_multi_source: bool | None = None,
+) -> PromotionMode:
+    """Map legacy ``require_multi_source`` to a promotion mode."""
+    if promotion_mode is not None:
+        return promotion_mode
+    if require_multi_source is False:
+        return "all"
+    if require_multi_source is True:
+        return "strict"
+    return "tiered"
+
+
 def apply_corroboration(
     grounded: list[GroundedClaimForSynthesis],
     unverified: list[UnverifiedClaimForSynthesis],
     catalog: list[SourceRecord],
     *,
-    require_multi_source: bool = True,
+    require_multi_source: bool | None = None,
+    promotion_mode: PromotionMode | None = None,
     jaccard_threshold: float = DEFAULT_JACCARD_THRESHOLD,
 ) -> tuple[list[GroundedClaimForSynthesis], list[UnverifiedClaimForSynthesis]]:
-    """Split document-confirmed claims into multi-source facts vs insufficient.
+    """Annotate / split claims by corroboration.
 
-    When ``require_multi_source`` is True (default), a claim family needs at
-    least two independent catalog sources before it may enter *Faits établis*.
-    Otherwise claims are annotated with ``score_confiance`` but all stay grounded.
+    Modes
+    -----
+    - ``tiered`` (default): multi-source → ``promotion_tier=corroborated``;
+      single-source grounded citations → ``documented`` (still kept for synthesis).
+    - ``strict`` (legacy): single-source demoted to unverified
+      (``corroboration_insuffisante``).
+    - ``all``: every grounded claim treated as corroborated (debug / exploratory).
     """
+    mode = resolve_promotion_mode(
+        promotion_mode=promotion_mode,
+        require_multi_source=require_multi_source,
+    )
+    # Back-compat: callers that only pass require_multi_source=True expect strict.
+    if promotion_mode is None and require_multi_source is True:
+        mode = "strict"
+    elif promotion_mode is None and require_multi_source is None:
+        mode = "tiered"
+
     clusters = cluster_claims(
         grounded, catalog=catalog, jaccard_threshold=jaccard_threshold
     )
@@ -214,7 +246,7 @@ def apply_corroboration(
     demoted: list[UnverifiedClaimForSynthesis] = list(unverified)
 
     for cluster in clusters:
-        if require_multi_source and not cluster.corroboration_ok:
+        if mode == "strict" and not cluster.corroboration_ok:
             for claim in cluster.claims:
                 demoted.append(
                     UnverifiedClaimForSynthesis(
@@ -233,11 +265,39 @@ def apply_corroboration(
                 cluster.independent_source_ids,
             )
             continue
-        kept.extend(cluster.claims)
+
+        for claim in cluster.claims:
+            if mode == "all" or cluster.corroboration_ok:
+                tier = "corroborated"
+                ok = True
+                score = (
+                    cluster.score_confiance
+                    if cluster.corroboration_ok or mode == "all"
+                    else min(cluster.score_confiance, 0.72)
+                )
+                if mode == "all" and not cluster.corroboration_ok:
+                    score = min(max(claim.confidence, 0.6), 0.85)
+            else:
+                # tiered + single source
+                tier = "documented"
+                ok = False
+                score = min(cluster.score_confiance, 0.72)
+            kept.append(
+                replace(
+                    claim,
+                    score_confiance=score,
+                    corroboration_ok=ok,
+                    promotion_tier=tier,
+                )
+            )
 
     logger.info(
-        "Corroboration: %d claim(s) promoted, %d demoted as insufficient",
+        "Corroboration (%s): %d claim(s) kept "
+        "(%d corroborated, %d documented), %d demoted",
+        mode,
         len(kept),
+        sum(1 for c in kept if c.promotion_tier == "corroborated"),
+        sum(1 for c in kept if c.promotion_tier == "documented"),
         len(demoted) - len(unverified),
     )
     return kept, demoted
