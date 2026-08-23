@@ -118,6 +118,12 @@ class SynthesisTierCounts:
     hypotheses: int = 0
     grounded_input: int = 0
     promotion_mode: str = "tiered"
+    classe_preuve_primaire: int = 0
+    classe_preuve_secondaire: int = 0
+    classe_non_probante: int = 0
+    classe_non_determine: int = 0
+    utilisable: int = 0
+    non_utilisable: int = 0
 
 
 def quality_report_path(
@@ -319,12 +325,25 @@ def render_synthesis_quality_markdown(
         f"| Faits documentés (source unique) | {tiers.documented} |",
         f"| Hypothèses / à vérifier | {tiers.hypotheses} |",
         "",
+        "## Classification des sources",
+        "",
+        "| Classe | Count |",
+        "|---|---:|",
+        f"| Preuve primaire | {tiers.classe_preuve_primaire} |",
+        f"| Preuve secondaire | {tiers.classe_preuve_secondaire} |",
+        f"| Non probante | {tiers.classe_non_probante} |",
+        f"| Non déterminée | {tiers.classe_non_determine} |",
+        f"| Utilisable comme preuve | {tiers.utilisable} |",
+        f"| Non utilisable | {tiers.non_utilisable} |",
+        "",
         "## Lecture rapide",
         "",
         "- **Corroborés = 0** et **documentés > 0** : normal sur un corpus "
         "mono-site ; chercher une 2ᵉ source indépendante pour promouvoir.",
         "- **Documentés = 0** malgré des analyses : vérifier grounding "
         "(citations) et `utilisable_comme_preuve`.",
+        "- Activer `synthesis.classify_sources` dans config.json pour "
+        "reclasser les sources ambiguës via LLM.",
         "",
     ]
     return "\n".join(lines)

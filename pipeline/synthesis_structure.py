@@ -168,10 +168,23 @@ def parse_source_refs(text: str) -> list[int]:
     return sorted(set(found))
 
 
-def build_source_catalog(collection: ParsedCollection) -> list[SourceRecord]:
-    """Normalize per-source metadata from parsed collecte Markdown."""
-    from pipeline.source_classifier import classify_source_heuristic
+def build_source_catalog(
+    collection: ParsedCollection,
+    *,
+    llm: object | None = None,
+    classify_with_llm: bool = False,
+) -> list[SourceRecord]:
+    """Normalize per-source metadata from parsed collecte Markdown.
+
+    When ``classify_with_llm`` is True and ``llm`` is available, ambiguous
+    heuristics (``non_determine`` / None) are reclassified via SourceClassifier.
+    """
+    from pipeline.source_classifier import SourceClassifier, classify_source_heuristic
     from pipeline.source_criticism import apply_external_criticism
+
+    classifier: SourceClassifier | None = None
+    if classify_with_llm and llm is not None:
+        classifier = SourceClassifier(client=llm)  # type: ignore[arg-type]
 
     catalog: list[SourceRecord] = []
     for source in collection.sources:
@@ -182,12 +195,24 @@ def build_source_catalog(collection: ParsedCollection) -> list[SourceRecord]:
         date = normalize_date(source.date, blob)
         periode = infer_period_label(date, blob)
         themes = infer_themes(source)
-        preuve = classify_source_heuristic(
-            title=source.title,
-            url=source.source_url,
-            connector=source.connector,
-            source_type=source.source_type,
-        )
+        if classifier is not None:
+            preuve = classifier.classify(
+                query=collection.query,
+                title=source.title,
+                url=source.source_url,
+                connector=source.connector,
+                source_type=source.source_type,
+                cote=getattr(source, "archive_reference", None),
+                snippet=excerpt_blob[:500] or None,
+                use_llm=True,
+            )
+        else:
+            preuve = classify_source_heuristic(
+                title=source.title,
+                url=source.source_url,
+                connector=source.connector,
+                source_type=source.source_type,
+            )
         catalog.append(
             SourceRecord(
                 id=sid,

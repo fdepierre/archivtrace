@@ -21,7 +21,7 @@ from config import (
     DEFAULT_OUTPUT_DIR,
     DEFAULT_SYNTHESIS_DIR,
 )
-from pipeline.run_api import run_synthesize
+from pipeline.run_api import run_reverify, run_synthesize
 from utils.app_config import resolve_settings
 
 logger = logging.getLogger("synthese")
@@ -107,6 +107,15 @@ def build_parser() -> argparse.ArgumentParser:
         default="synthese",
         help="synthese = note de recherche ; contexte = dossier pour rédiger un article.",
     )
+    intention.add_argument(
+        "--reverify",
+        type=Path,
+        default=None,
+        help=(
+            "Re-applique NLI/CoVe sur une synthèse existante (sans régénérer "
+            "la prose). Sortie: work/synthesys/verified/…_synthese_verified.md."
+        ),
+    )
     advanced.add_argument(
         "--timeout",
         type=float,
@@ -117,16 +126,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-single-source-facts",
         action="store_true",
         help=(
-            "Traite tous les claims ancrés comme faits corroborés "
-            "(désactive le tiering documenté / corroboré)."
+            "Legacy: alias de synthesis.facts_mode=all "
+            "(préférer config.json)."
         ),
     )
     advanced.add_argument(
         "--legacy-corroboration",
         action="store_true",
         help=(
-            "Ancien comportement : exclure les faits à source unique des "
-            "faits établis (corroboration_insuffisante)."
+            "Legacy: alias de synthesis.facts_mode=strict "
+            "(préférer config.json)."
         ),
     )
     advanced.add_argument(
@@ -161,6 +170,17 @@ def main(argv: list[str] | None = None) -> int:
         datefmt="%H:%M:%S",
     )
 
+    if args.allow_single_source_facts:
+        logger.warning(
+            "Flag legacy --allow-single-source-facts : préférer "
+            "synthesis.facts_mode=all dans config.json"
+        )
+    if args.legacy_corroboration:
+        logger.warning(
+            "Flag legacy --legacy-corroboration : préférer "
+            "synthesis.facts_mode=strict dans config.json"
+        )
+
     synthesis_model = args.model_synthesis or args.model
     cfg = resolve_settings(
         ollama_host=args.ollama_url,
@@ -173,13 +193,11 @@ def main(argv: list[str] | None = None) -> int:
         llm_base_url=args.llm_base_url or args.ollama_url,
     )
 
-    path = run_synthesize(
-        cfg,
+    common = dict(
         query=args.query,
         input_path=args.input,
         research_dir=args.research_dir,
         output_dir=args.output_dir,
-        mode=args.mode,
         llm_provider=args.llm,
         allow_single_source_facts=bool(args.allow_single_source_facts),
         legacy_corroboration=bool(args.legacy_corroboration),
@@ -187,7 +205,9 @@ def main(argv: list[str] | None = None) -> int:
         no_nli=bool(args.no_nli),
         nli_llm=True if args.nli_llm else None,
     )
-    return 0 if path is not None else 2
+    if args.reverify is not None:
+        return run_reverify(cfg, synthesis_path=args.reverify, **common).exit_code
+    return run_synthesize(cfg, mode=args.mode, **common).exit_code
 
 
 if __name__ == "__main__":

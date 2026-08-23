@@ -118,6 +118,8 @@ def _flatten_policy_blocks(data: dict[str, Any]) -> dict[str, Any]:
             out["synthesis_verify_cove"] = bool(synthesis["verify_cove"])
         if "nli_llm" in synthesis and "synthesis_nli_llm" not in out:
             out["synthesis_nli_llm"] = bool(synthesis["nli_llm"])
+        if "classify_sources" in synthesis and "synthesis_classify_sources" not in out:
+            out["synthesis_classify_sources"] = bool(synthesis["classify_sources"])
     return out
 
 def load_config(path: Path | None = None) -> Config:
@@ -172,6 +174,7 @@ def load_config(path: Path | None = None) -> Config:
         "synthesis_verify_nli": bool,
         "synthesis_verify_cove": bool,
         "synthesis_nli_llm": bool,
+        "synthesis_classify_sources": bool,
     }
     for key, caster in field_map.items():
         if key not in data or data[key] is None:

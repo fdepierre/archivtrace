@@ -195,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         llm_base_url=args.llm_base_url or args.ollama_url,
     )
 
-    path = run_analyse(
+    return run_analyse(
         cfg,
         input_path=args.input,
         output_path=args.output,
@@ -204,10 +204,7 @@ def main(argv: list[str] | None = None) -> int:
         skip_existing=bool(args.skip_existing),
         force=bool(args.force),
         llm_provider=args.llm,
-    )
-    if path is None:
-        return 2
-    return 0
+    ).exit_code
 
 
 if __name__ == "__main__":

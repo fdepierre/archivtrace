@@ -66,6 +66,7 @@ def ollama_cfg() -> Config:
     )
 
 
+@pytest.mark.live
 def test_comparative_extraction_rochecardon_garnis(ollama_cfg: Config):
     if not _ollama_available(ollama_cfg):
         pytest.skip("Ollama not reachable")

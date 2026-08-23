@@ -1,0 +1,14 @@
+[project]
+name = "ollama-shared"
+version = "0.0.0+ci"
+description = "CI stub of ollama_shared (local installs use ../shared/ollama_shared)"
+requires-python = ">=3.10"
+dependencies = ["ollama>=0.4"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ollama_shared*"]

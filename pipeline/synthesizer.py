@@ -97,6 +97,8 @@ class Synthesizer:
         verify_cove: bool = False,
         verify_nli: bool = True,
         nli_use_llm: bool = False,
+        classify_sources: bool = False,
+        classify_llm: LlmGateway | None = None,
     ) -> None:
         """Configure LLM backend, mode, and prompt size limits."""
         self.llm = llm
@@ -121,6 +123,8 @@ class Synthesizer:
         self.verify_cove = verify_cove
         self.verify_nli = verify_nli
         self.nli_use_llm = nli_use_llm
+        self.classify_sources = classify_sources
+        self.classify_llm = classify_llm
         self._template = TemplateSynthesizer()
 
     def run(self, collection: ParsedCollection) -> SynthesisResult:
@@ -143,7 +147,11 @@ class Synthesizer:
             validate_synthesis_output,
         )
 
-        catalog = build_source_catalog(collection)
+        catalog = build_source_catalog(
+            collection,
+            llm=self.classify_llm or self.llm,
+            classify_with_llm=self.classify_sources,
+        )
         grounded_raw, unverified = collect_grounded_claims(collection, catalog)
         from pipeline.corroboration_checker import apply_corroboration
 
@@ -223,7 +231,7 @@ class Synthesizer:
                 grounded_claim_count=len(grounded),
                 synthesis_validated=True,
                 fact_assessments=assessments,
-                tier_counts=self._tier_counts(validated, grounded),
+                tier_counts=self._tier_counts(validated, grounded, catalog),
             )
 
         backend, raw_body = self._generate(prompt)
@@ -311,7 +319,7 @@ class Synthesizer:
                     grounded_claim_count=len(grounded),
                     synthesis_validated=True,
                     fact_assessments=assessments,
-                    tier_counts=self._tier_counts(validated, grounded),
+                    tier_counts=self._tier_counts(validated, grounded, catalog),
                 )
 
             # Reject narrative: do not publish unsourced prose.
@@ -360,7 +368,7 @@ class Synthesizer:
                 validation_errors=validation_errors,
                 grounded_claim_count=len(grounded),
                 synthesis_validated=False,
-                tier_counts=self._tier_counts(None, grounded),
+                tier_counts=self._tier_counts(None, grounded, catalog),
             )
 
         structured = self._structured_from_validated(catalog, validated, unverified)
@@ -386,12 +394,12 @@ class Synthesizer:
             grounded_claim_count=len(grounded),
             synthesis_validated=True,
             fact_assessments=assessments,
-            tier_counts=self._tier_counts(validated, grounded),
+            tier_counts=self._tier_counts(validated, grounded, catalog),
         )
 
     @staticmethod
-    def _tier_counts(validated, grounded) -> dict[str, int]:
-        """Summarize promotion tiers for the quality report."""
+    def _tier_counts(validated, grounded, catalog=None) -> dict[str, int]:
+        """Summarize promotion tiers (+ optional source classes) for quality report."""
         corroborated = 0
         documented = 0
         if validated is not None:
@@ -405,12 +413,31 @@ class Synthesizer:
                 1 for c in grounded if getattr(c, "promotion_tier", None) == "documented"
             )
         hypotheses = max(0, len(grounded or []) - corroborated - documented)
-        return {
+        out: dict[str, int] = {
             "corroborated": corroborated,
             "documented": documented,
             "hypotheses": hypotheses,
             "grounded_input": len(grounded or []),
+            "classe_preuve_primaire": 0,
+            "classe_preuve_secondaire": 0,
+            "classe_non_probante": 0,
+            "classe_non_determine": 0,
+            "utilisable": 0,
+            "non_utilisable": 0,
         }
+        for rec in catalog or []:
+            classe = getattr(rec, "classe_preuve", None) or "non_determine"
+            key = f"classe_{classe}"
+            if key in out:
+                out[key] += 1
+            else:
+                out["classe_non_determine"] += 1
+            usable = getattr(rec, "utilisable_comme_preuve", None)
+            if usable is True:
+                out["utilisable"] += 1
+            elif usable is False:
+                out["non_utilisable"] += 1
+        return out
 
     def _apply_verification(self, validated, grounded):
         """Run NLI (+ optional CoVe) and return (output, assessments)."""
@@ -428,7 +455,11 @@ class Synthesizer:
 
     def _run_contexte(self, collection: ParsedCollection) -> SynthesisResult:
         """Writing-context mode (legacy corpus prompt — not the grounded JSON path)."""
-        catalog = build_source_catalog(collection)
+        catalog = build_source_catalog(
+            collection,
+            llm=self.classify_llm or self.llm,
+            classify_with_llm=self.classify_sources,
+        )
         prompt, _ = self._build_legacy_corpus_prompt(collection, catalog)
         backend, raw_body = self._generate(prompt)
         structured = merge_structured_data(catalog, {})
@@ -926,7 +957,11 @@ class Synthesizer:
         )
 
         if catalog is None:
-            catalog = build_source_catalog(collection)
+            catalog = build_source_catalog(
+                collection,
+                llm=self.classify_llm or self.llm,
+                classify_with_llm=self.classify_sources,
+            )
         if self.mode == "contexte":
             return self._build_legacy_corpus_prompt(collection, catalog)
 

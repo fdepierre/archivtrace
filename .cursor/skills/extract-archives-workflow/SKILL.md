@@ -11,11 +11,12 @@ description: >-
 
 ## Pipeline order
 
-1. **`collecte.py`** — search → download → text extract → keyword matches → `work/research/{date}_{query}_{connector}_collecte.md`
-2. **`analyse.py`** — per-document LLM ideas → `work/research/…_collecte_analyse_{model}.md` (default) or `--in-place`
-3. **`synthesize.py`** — corpus synthesis / `--mode contexte` → `work/synthesys/*_synthese.md` / `*_contexte.md`
+1. **`collecte.py`** → `pipeline.run_api.run_collect` — search → download → text extract → keyword matches → `work/research/{date}_{query}_{connector}_collecte.md`
+2. **`analyse.py`** → `run_analyse` — per-document LLM ideas → `work/research/…_collecte_analyse_{model}.md` (default) or `--in-place`
+3. **`synthesize.py`** → `run_synthesize` — corpus synthesis / `--mode contexte` → `work/synthesys/*_synthese.md` / `*_contexte.md`
+   - Optional: `--reverify path/to_synthese.md` → `run_reverify` (NLI/CoVe only, no narrative regen) → `work/synthesys/verified/*_synthese_verified.md`
 
-Do not reintroduce LLM calls into the collection path.
+CLIs stay thin (intention flags); policies live in `config.json`. Do not reintroduce LLM calls into the collection path.
 
 ## Before any long analyse run
 

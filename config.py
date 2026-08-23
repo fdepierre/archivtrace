@@ -64,6 +64,8 @@ DEFAULT_SYNTHESIS_FACTS_MODE = "tiered"
 DEFAULT_SYNTHESIS_VERIFY_NLI = True
 DEFAULT_SYNTHESIS_VERIFY_COVE = False
 DEFAULT_SYNTHESIS_NLI_LLM = False
+# When True, synthesis may call SourceClassifier LLM for ambiguous sources.
+DEFAULT_SYNTHESIS_CLASSIFY_SOURCES = False
 
 
 @dataclass(slots=True)
@@ -115,6 +117,7 @@ class Config:
     synthesis_verify_nli: bool = DEFAULT_SYNTHESIS_VERIFY_NLI
     synthesis_verify_cove: bool = DEFAULT_SYNTHESIS_VERIFY_COVE
     synthesis_nli_llm: bool = DEFAULT_SYNTHESIS_NLI_LLM
+    synthesis_classify_sources: bool = DEFAULT_SYNTHESIS_CLASSIFY_SOURCES
     extra_headers: dict[str, str] = field(default_factory=dict)
 
     def headers(self) -> dict[str, str]:

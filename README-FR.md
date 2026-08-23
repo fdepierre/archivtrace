@@ -361,7 +361,7 @@ archivtrace/
 ├── collecte.py                  # CLI collecte — ne contient pas de logique métier
 ├── analyse.py                   # CLI analyse LLM (tâche : extraction)
 ├── synthesize.py                # CLI synthèse / contexte (tâche : synthesis)
-├── verify.py                    # Déprécié — NLI/CoVe via synthesize + config.json
+├── synthesize.py                # Synthèse corpus (+ option --reverify)
 ├── config.py                    # Objet Config typé (dataclass)
 ├── config.json                  # Paramètres LLM / pipeline (JSONC ; bloc llm imbriqué)
 ├── models.py                    # Tous les modèles de données (dataclasses + enums)
@@ -450,7 +450,7 @@ Package externe partagé (sibling) :
 
 | Couche | Fichiers | Responsabilité | Connaît la source ? |
 |---|---|---|---|
-| **CLI** | `collecte.py`, `analyse.py`, `synthesize.py`, `verify.py` | Arguments, config, câblage | Non |
+| **CLI** | `collecte.py`, `analyse.py`, `synthesize.py` | Arguments, config, câblage | Non |
 | **Connecteur** | `connectors/*.py` | URLs, recherche, parsing, résolution | **Oui** |
 | **Stratégie** | `strategies/*.py` | Télécharger un fichier local | Partiellement |
 | **Pipeline** | `pipeline/*.py` | Orchestration, texte, matching, LLM, Markdown | **Non** |
@@ -747,10 +747,14 @@ sinon il reste en **Hypothèses** avec `corroboration_insuffisante`.
 
 Options :
 
-- `--allow-single-source-facts` — désactive la règle des 2 sources (debug)
+- Préférer `synthesis.facts_mode` dans `config.json` (`tiered` | `strict` | `all`).
+  Alias CLI legacy (avertissement) : `--allow-single-source-facts` → `all`,
+  `--legacy-corroboration` → `strict`.
 - NLI **actif par défaut** (entailment déterministe ; `--nli-llm` ; `--no-nli`)
 - `--verify-cove` — Chain-of-Verification contre la citation (coût LLM +)
-- NLI/CoVe : politiques `synthesis.*` dans `config.json` (appliquées par `synthesize.py`). `verify.py` reste disponible mais est **déprécié**.
+- NLI/CoVe : politiques `synthesis.*` dans `config.json` (appliquées par `synthesize.py`).
+  Pour recontrôler un fichier existant sans régénérer la prose :
+  `synthesize.py --input … --reverify chemin/vers_synthese.md`.
 
 Modules : `pipeline/corroboration_checker.py`, `pipeline/source_criticism.py`,
 `pipeline/nli_verifier.py`, `pipeline/cove_verifier.py`, `pipeline/verification_pipeline.py`.
@@ -881,11 +885,20 @@ Pour l’usage quotidien, préférez éditer `config.json` plutôt que d’empil
   "facts_mode": "tiered",   // tiered | strict | all
   "verify_nli": true,
   "verify_cove": false,
-  "nli_llm": false
+  "nli_llm": false,
+  "classify_sources": false
 }
 ```
 
-API appelable (futur front) : `pipeline.run_api.run_synthesize`.
+Profil recommandé archives PDF (à activer manuellement) :
+
+```jsonc
+"analyse": { "auto_ocr": true, "two_pass_extraction": true }
+```
+
+API appelable (futur front) : `pipeline.run_api.run_collect` / `run_analyse` /
+`run_synthesize` / `run_reverify` (retour `RunResult` : `exit_code`, `paths`,
+`quality_report_path` optionnel). Pas de couche HTTP pour l’instant.
 
 ### `config.json` — paramètres persistants (JSONC)
 
@@ -1172,7 +1185,7 @@ Exécuter **T0 → T1** avant chaque merge. Exécuter **T2** lors d’un changem
 | Tests collectés (sans Ollama live) | 175 |
 | T0+T1 | **175 passed** |
 | Validation historique | corroboration + critique externe + NLI + CoVe |
-| Scripts | `synthesize.py`, `verify.py` |
+| Scripts | `synthesize.py` (`--reverify` pour recontrôle) |
 
 Mettre à jour ce snapshot après un changement significatif du pipeline.
 

@@ -63,7 +63,12 @@ Policies live in `config.json`:
 - `analyse.auto_ocr` / `analyse.two_pass_extraction`
 - `synthesis.facts_mode` (`tiered` | `strict` | `all`)
 - `synthesis.verify_nli` / `synthesis.verify_cove` / `synthesis.nli_llm`
+- `synthesis.classify_sources` (LLM fallback for ambiguous source classes)
 
-`verify.py` is deprecated; synthesis applies NLI/CoVe from config.
-Callable API: `pipeline.run_api.run_analyse` / `run_synthesize` (future web UI).
+`synthesize.py --reverify` re-applies NLI/CoVe on an existing synthesis
+without regenerating narrative prose.
+Callable API: `pipeline.run_api.run_collect` / `run_analyse` / `run_synthesize` /
+`run_reverify` (each returns `RunResult`: `exit_code`, `paths`, optional
+`quality_report_path`).
+HTTP layer deferred until a front is needed.
 

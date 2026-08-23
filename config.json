@@ -129,7 +129,9 @@
     "facts_mode": "tiered",
     "verify_nli": true,
     "verify_cove": false,
-    "nli_llm": false
+    "nli_llm": false,
+    // LLM fallback when heuristic class is non_determine (extra cost)
+    "classify_sources": false
   }
 
 }
