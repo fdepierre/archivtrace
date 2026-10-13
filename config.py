@@ -66,6 +66,8 @@ DEFAULT_SYNTHESIS_VERIFY_COVE = False
 DEFAULT_SYNTHESIS_NLI_LLM = False
 # When True, synthesis may call SourceClassifier LLM for ambiguous sources.
 DEFAULT_SYNTHESIS_CLASSIFY_SOURCES = False
+# Cap parallel (query × connector) workers during multi-site collection.
+DEFAULT_COLLECT_MAX_WORKERS = 4
 
 
 @dataclass(slots=True)
@@ -77,6 +79,7 @@ class Config:
     timeout: float = 30.0
     delay: float = 1.0
     max_results: int = 20
+    collect_max_workers: int = DEFAULT_COLLECT_MAX_WORKERS
     dry_run: bool = False
     verbose: bool = False
     user_agent: str = DEFAULT_USER_AGENT

@@ -17,14 +17,10 @@ from pipeline.prompts import (
     SYNTHESIS_SYSTEM,
 )
 from pipeline.synthesis_structure import (
-    ArticlePlanSection,
-    ChronologyEntry,
     StructuredSynthesisData,
     VerificationPoint,
     build_source_catalog,
-    build_sources_by_theme,
     check_reference_coherence,
-    collect_web_queries,
     enrich_structured_from_narrative,
     merge_structured_data,
     render_article_plan_json,
@@ -214,8 +210,8 @@ class Synthesizer:
         if self.llm is None or not self.llm.is_available():
             validated = self._deterministic_output_from_claims(grounded, unverified)
             validated, assessments = self._apply_verification(validated, grounded)
-            structured = self._structured_from_validated(catalog, validated, unverified)
-            body = self._render_validated_body(validated, assessments)
+            structured = self.structured_from_validated(catalog, validated, unverified)
+            body = self.render_validated_body(validated, assessments)
             return SynthesisResult(
                 query=collection.query,
                 source_path=self._source_path_label(collection),
@@ -290,10 +286,10 @@ class Synthesizer:
                 validated, assessments = self._apply_verification(
                     validated, grounded
                 )
-                structured = self._structured_from_validated(
+                structured = self.structured_from_validated(
                     catalog, validated, unverified
                 )
-                body = self._render_validated_body(validated, assessments)
+                body = self.render_validated_body(validated, assessments)
                 if validation_errors:
                     body = (
                         "> ℹ️ Synthèse LLM invalide — promotion déterministe "
@@ -371,8 +367,8 @@ class Synthesizer:
                 tier_counts=self._tier_counts(None, grounded, catalog),
             )
 
-        structured = self._structured_from_validated(catalog, validated, unverified)
-        body = self._render_validated_body(validated, assessments)
+        structured = self.structured_from_validated(catalog, validated, unverified)
+        body = self.render_validated_body(validated, assessments)
         if not structured.reference_control or not structured.reference_control.sources_utilisees:
             body = (
                 "> ⚠️ Aucun fait historique n’a été validé par une citation source "
@@ -636,147 +632,24 @@ class Synthesizer:
         )
 
     @staticmethod
-    def _structured_from_validated(
+    def structured_from_validated(
         catalog: list,
         validated: object,
         unverified: list,
     ) -> StructuredSynthesisData:
-        from pipeline.prompt_schemas import SynthesisOutput
+        """Public API — delegates to ``pipeline.synthesis_render``."""
+        from pipeline.synthesis_render import (
+            structured_from_validated as _structured,
+        )
 
-        assert isinstance(validated, SynthesisOutput)
-        chronologie = [
-            ChronologyEntry(
-                date=ev.date or "",
-                periode=None,
-                description=ev.texte,
-                sources=list(ev.sources),
-            )
-            for ev in validated.chronologie
-        ]
-        points = [
-            VerificationPoint(
-                categorie="general",
-                description=f"[{p.statut}] {p.description}",
-                indices_sources=list(p.sources_indices),
-                priorite="moyenne",
-                requetes_web_suggerees=list(p.requetes_web_suggerees),
-            )
-            for p in validated.points_a_verifier
-        ]
-        # Merge unverified candidates not already covered.
-        for item in unverified[:20]:
-            points.append(
-                VerificationPoint(
-                    categorie=item.theme or "general",
-                    description=f"[à confirmer] {item.affirmation} ({item.reason})",
-                    indices_sources=[item.source_id],
-                    priorite="basse",
-                    requetes_web_suggerees=[],
-                    id=item.claim_id,
-                )
-            )
-        by_theme = build_sources_by_theme(catalog)
-        plan_sections = [
-            ArticlePlanSection(
-                titre=str(t),
-                themes=[],
-                sources=[],
-                periode=None,
-            )
-            for t in (validated.plan_article or [])
-            if str(t).strip()
-        ]
-        text_blob = "\n".join(
-            [f.texte for f in validated.faits_etablis]
-            + [f.texte for f in validated.faits_documentes]
-            + [e.texte for e in validated.chronologie]
-            + [p.description for p in points]
-        )
-        data = StructuredSynthesisData(
-            sources=catalog,
-            chronologie=chronologie,
-            points_a_verifier=points,
-            sources_par_theme=by_theme,
-            plan_article=plan_sections,
-            recherches_web=collect_web_queries(text_blob, points),
-        )
-        data.reference_control = check_reference_coherence(catalog, text_blob)
-        return data
+        return _structured(catalog, validated, unverified)
 
     @staticmethod
-    def _render_validated_body(validated: object, assessments: list | None = None) -> str:
-        from pipeline.prompt_schemas import SynthesisOutput
-        from pipeline.verification_pipeline import render_confidence_section
+    def render_validated_body(validated: object, assessments: list | None = None) -> str:
+        """Public API — delegates to ``pipeline.synthesis_render``."""
+        from pipeline.synthesis_render import render_validated_body as _render
 
-        assert isinstance(validated, SynthesisOutput)
-        score_by_text = {a.texte: a for a in (assessments or [])}
-
-        def _fact_lines(facts) -> list[str]:
-            lines: list[str] = []
-            if not facts:
-                return ["_Aucun._"]
-            for fact in facts:
-                meta = score_by_text.get(fact.texte)
-                if meta is not None:
-                    lines.append(
-                        f"- {fact.texte} "
-                        f"_(score={meta.score_confiance:.2f}, {meta.gate})"
-                        + (f", NLI={meta.nli_label}" if meta.nli_label else "")
-                        + "_"
-                    )
-                else:
-                    lines.append(f"- {fact.texte}")
-            return lines
-
-        lines: list[str] = [
-            "## Faits corroborés (≥2 sources indépendantes)",
-            "",
-        ]
-        if validated.faits_etablis:
-            lines.extend(_fact_lines(validated.faits_etablis))
-        else:
-            lines.append("_Aucun fait corroboré validé._")
-
-        lines.extend(
-            [
-                "",
-                "## Faits documentés (source unique, citation ancrée)",
-                "",
-            ]
-        )
-        if validated.faits_documentes:
-            lines.extend(_fact_lines(validated.faits_documentes))
-        else:
-            lines.append("_Aucun fait documenté (source unique)._")
-
-        # Backward-compatible alias heading when only legacy consumers expect it.
-        if validated.faits_etablis or validated.faits_documentes:
-            lines.extend(["", "<!-- legacy: Faits établis et sourcés (voir sections ci-dessus) -->"])
-
-        lines.extend(["", "## Chronologie sourcée", ""])
-        if validated.chronologie:
-            lines.append("| Date / période | Événement | Sources |")
-            lines.append("|---|---|---|")
-            for ev in validated.chronologie:
-                src = ", ".join(f"[S:{s}]" for s in ev.sources)
-                lines.append(f"| {ev.date or '—'} | {ev.texte} | {src} |")
-        else:
-            lines.append("_Aucun événement chronologique validé._")
-        lines.extend(["", "## Hypothèses et vérifications à mener", ""])
-        if validated.points_a_verifier:
-            for point in validated.points_a_verifier:
-                lines.append(f"- [{point.statut}] {point.description}")
-        else:
-            lines.append("_Aucune hypothèse listée._")
-        if validated.plan_article:
-            lines.extend(["", "## Plan d'article suggéré", ""])
-            for i, title in enumerate(validated.plan_article, start=1):
-                lines.append(f"{i}. {title}")
-        lines.append("")
-        conf = render_confidence_section(assessments or [])
-        if conf:
-            lines.append(conf)
-        return "\n".join(lines)
+        return _render(validated, assessments)
 
     def _ensure_json_blocks(self, raw_body: str, prompt: str) -> str:
         """Deprecated path kept for tests importing the symbol; prefer v2 repair."""

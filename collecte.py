@@ -6,7 +6,7 @@ The CLI only wires arguments into a ``Config`` and calls
 Examples
 --------
     python collecte.py --query "valmontagne" --connector numelyo
-    python collecte.py --query "valmontagne" --connector numelyo --dry-run
+    python collecte.py --query "valmontagne" --connectors all --dry-run
     python collecte.py --queries-file queries.txt --connector numelyo
 """
 
@@ -53,7 +53,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--connector",
         default="numelyo",
         choices=available_connectors(),
-        help="Connecteur source à utiliser (défaut: numelyo).",
+        help="Connecteur source unique (défaut: numelyo). Ignoré si --connectors est défini.",
+    )
+    intention.add_argument(
+        "--connectors",
+        metavar="SPEC",
+        help=(
+            "Plusieurs connecteurs : 'all' (numelyo, archives_rhone, archives_map, "
+            "gallica ; + catalog_html si config.json) ou liste séparée par des "
+            "virgules. Exécution parallèle par site."
+        ),
     )
     intention.add_argument(
         "--output-dir",
@@ -69,11 +78,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     intention.add_argument(
         "--dry-run",
-        action="store_true",
-        help="Recherche + résolution sans téléchargement lourd; Markdown quand même produit.",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Recherche + résolution sans téléchargement lourd; Markdown quand même produit. "
+            "Utiliser --no-dry-run pour forcer le téléchargement malgré config.json."
+        ),
     )
     intention.add_argument(
-        "--verbose", action="store_true", help="Logs détaillés (DEBUG)."
+        "--verbose",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Logs détaillés (DEBUG). --no-verbose pour forcer INFO malgré config.json.",
     )
 
     advanced.add_argument(
@@ -105,8 +121,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     advanced.add_argument(
         "--enable-ocr",
-        action="store_true",
-        help="Activer l'OCR (PaddleOCR) si la couche texte native est insuffisante.",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Activer l'OCR (PaddleOCR) si la couche texte native est insuffisante. "
+            "--no-enable-ocr désactive même si config.json l'active."
+        ),
+    )
+    advanced.add_argument(
+        "--collect-max-workers",
+        type=int,
+        default=None,
+        help="Plafond de workers pour --connectors all (défaut: config / 4).",
     )
     advanced.add_argument(
         "--ocr-lang",
@@ -124,7 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def configure_logging(verbose: bool) -> None:
+def configure_logging(verbose: bool | None) -> None:
     """Configure root logging (INFO by default, DEBUG when ``verbose``)."""
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
@@ -151,17 +177,23 @@ def main(argv: list[str] | None = None) -> int:
         timeout=args.timeout,
         delay=args.delay,
         max_results=args.max_results,
-        dry_run=args.dry_run or None,
-        verbose=args.verbose or None,
+        collect_max_workers=args.collect_max_workers,
+        dry_run=args.dry_run,
+        verbose=args.verbose,
         match_mode=MatchMode(args.match_mode) if args.match_mode else None,
         context_window=args.context_window,
-        enable_ocr=True if args.enable_ocr else None,
+        enable_ocr=args.enable_ocr,
         ocr_lang=args.ocr_lang,
         catalog_search_url=args.catalog_search_url,
         catalog_root=args.catalog_root,
     )
     queries = load_queries(args)
-    return run_collect(cfg, queries=queries, connector=args.connector).exit_code
+    return run_collect(
+        cfg,
+        queries=queries,
+        connector=args.connector,
+        connectors=args.connectors,
+    ).exit_code
 
 
 if __name__ == "__main__":

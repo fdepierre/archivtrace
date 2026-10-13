@@ -1,5 +1,10 @@
 # Agent notes — ArchivTrace
 
+Canonical **tool-agnostic** project guide for coding agents and humans
+(Cursor, Claude Code, Windsurf, Copilot, …). Editor-specific extras may live
+under `.cursor/` or similar; keep the contracts below as the shared source of
+truth. Formatting: see `.editorconfig`.
+
 Target platforms: **Windows**, **WSL**, **Linux**.
 
 Working artefacts (not source code) live under **`work/`**:
@@ -48,12 +53,9 @@ Module docstrings = function-level behaviour. Keep `README.md` / `README-FR.md` 
 
 Rotating JSONL logs: `work/logs/llm/llm_calls.jsonl` (tokens / duration / provider — basis for cost analysis).
 
-Before running or debugging CLI commands, follow:
-
-- `.cursor/skills/cross-platform-runtime/SKILL.md`
-- `.cursor/skills/extract-archives-workflow/SKILL.md`
-
-Project rule (always on): `.cursor/rules/cross-platform.mdc`.
+Before running or debugging CLI commands, prefer this file (`AGENTS.md`) and
+`README.md` / `README-FR.md`. Optional local Cursor skills under `.cursor/`
+(gitignored) may mirror the same guidance but are not part of the shared repo.
 
 ## CLI vs config (UX)
 
@@ -69,6 +71,10 @@ Policies live in `config.json`:
 without regenerating narrative prose.
 Callable API: `pipeline.run_api.run_collect` / `run_analyse` / `run_synthesize` /
 `run_reverify` (each returns `RunResult`: `exit_code`, `paths`, optional
-`quality_report_path`).
+`quality_report_path`, `errors`, `stats`). Synthesis render helpers live in
+`pipeline.synthesis_render` (used by reverify). Connector metadata:
+`connectors.meta.ConnectorInfo` / `list_connector_info()`.
 HTTP layer deferred until a front is needed.
+OCR optional: `pip install -r requirements-ocr.txt`.
+Ollama client: vendored at `vendor/ollama_shared`.
 

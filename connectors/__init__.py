@@ -11,6 +11,13 @@ from connectors.archives_map import ArchivesMapConnector
 from connectors.archives_rhone import ArchivesRhoneConnector
 from connectors.base import Connector
 from connectors.catalog_html import CatalogHtmlConnector
+from connectors.gallica import GallicaConnector
+from connectors.meta import (
+    CONNECTOR_INFO,
+    ConnectorInfo,
+    get_connector_info,
+    list_connector_info,
+)
 from connectors.numelyo import NumelyoConnector
 from utils.http import HttpClient
 
@@ -20,12 +27,21 @@ REGISTRY: dict[str, type[Connector]] = {
     ArchivesRhoneConnector.name: ArchivesRhoneConnector,
     ArchivesMapConnector.name: ArchivesMapConnector,
     CatalogHtmlConnector.name: CatalogHtmlConnector,
+    GallicaConnector.name: GallicaConnector,
 }
 
 
 def available_connectors() -> list[str]:
     """Sorted list of registered connector names."""
     return sorted(REGISTRY)
+
+
+def production_connectors(*, include_catalog: bool = False) -> list[str]:
+    """Connectors suitable for ``--connectors all`` (excludes template-only sources)."""
+    names = [n for n in available_connectors() if n != "catalog_html"]
+    if include_catalog and "catalog_html" in REGISTRY:
+        names.append("catalog_html")
+    return sorted(names)
 
 
 def build_connector(name: str, http: HttpClient, config: Config) -> Connector:
@@ -45,11 +61,17 @@ def build_connector(name: str, http: HttpClient, config: Config) -> Connector:
 
 __all__ = [
     "Connector",
+    "ConnectorInfo",
+    "CONNECTOR_INFO",
     "NumelyoConnector",
     "ArchivesRhoneConnector",
     "ArchivesMapConnector",
     "CatalogHtmlConnector",
+    "GallicaConnector",
     "REGISTRY",
     "build_connector",
     "available_connectors",
+    "production_connectors",
+    "get_connector_info",
+    "list_connector_info",
 ]

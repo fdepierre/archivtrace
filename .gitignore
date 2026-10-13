@@ -6,8 +6,25 @@ __pycache__/
 venv/
 *.egg-info/
 
-# Editor / local tooling
+# Local secrets (see .env.example)
+.env
+.env.local
+config.local.json
+
+# Editor / IDE / AI coding tools — local only (portable rules live in AGENTS.md,
+# CLAUDE.md, .editorconfig). Do not commit tool-specific caches or settings.
 .vscode/
+.idea/
+.vs/
+*.code-workspace
+.cursor/
+.windsurf/
+.claude/
+.continue/
+.copilot/
+.gemini/
+.aider*
+.specstory/
 *.swp
 .DS_Store
 Thumbs.db

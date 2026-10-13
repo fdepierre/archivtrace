@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from pipeline.quality_report import (
     EXTRACTION_QUALITY,
     SynthesisTierCounts,
@@ -48,33 +46,26 @@ def test_extraction_quality_collector_counts():
     assert snap["citation_none"] == 1
 
 
-def test_build_quality_from_rochecardon_gemma4_analyse():
-    path = Path(
-        "work/research/2026-08-02_rochecardon_archives_rhone_collecte_analyse_gemma4-26b.md"
-    )
-    if not path.exists():
-        pytest.skip("Rochecardon gemma4 analyse artefact missing")
+FIXTURE_ANALYSE = Path(__file__).parent / "fixtures" / "analyse_quality_sample.md"
+
+
+def test_build_quality_from_analyse_fixture():
     EXTRACTION_QUALITY.reset()
-    metrics = build_quality_from_analyse_file(path)
-    assert metrics["query"] == "Rochecardon"
-    assert int(metrics["sources_total"]) == 9
+    metrics = build_quality_from_analyse_file(FIXTURE_ANALYSE)
+    assert metrics["query"] == "FixtureQuality"
+    assert int(metrics["sources_total"]) == 2
     assert int(metrics["claims_confirmed"]) >= 1
     text = render_analyse_quality_markdown(metrics)
     assert "Confirmés" in text or "confirm" in text.casefold()
     assert "Validation JSON" in text or "validation" in text.casefold()
 
 
-def test_write_analyse_quality_report_rochecardon(tmp_path: Path):
-    path = Path(
-        "work/research/2026-08-02_rochecardon_archives_rhone_collecte_analyse_gemma4-26b.md"
-    )
-    if not path.exists():
-        pytest.skip("Rochecardon gemma4 analyse artefact missing")
+def test_write_analyse_quality_report_fixture(tmp_path: Path):
     out = tmp_path / "quality.md"
-    write_analyse_quality_report(out, analyse_path=path)
+    write_analyse_quality_report(out, analyse_path=FIXTURE_ANALYSE)
     body = out.read_text(encoding="utf-8")
     assert "Rapport qualité" in body
-    assert "Rochecardon" in body
+    assert "FixtureQuality" in body
 
 
 def test_write_synthesis_quality_report(tmp_path: Path):

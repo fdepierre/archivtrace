@@ -79,7 +79,7 @@ def test_render_shows_both_tier_headings():
         points_a_verifier=[],
         plan_article=[],
     )
-    body = Synthesizer._render_validated_body(validated)
+    body = Synthesizer.render_validated_body(validated)
     assert "Faits corroborés" in body
     assert "Faits documentés" in body
     assert "Fait corroboré" in body

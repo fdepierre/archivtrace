@@ -5,11 +5,11 @@ Corpus-level synthesis remains in `synthesize.py`.
 
 Examples
 --------
-    python analyse.py --input work/research/2026-06-28_valmontagne_collecte.md
-    python analyse.py --input work/research/..._collecte.md --only-matches
-    python analyse.py --input work/research/..._collecte.md --model gemma3:4b
-        → work/research/..._collecte_analyse_gemma3-4b.md
-    python analyse.py --input work/research/..._collecte.md --in-place
+    python analyse.py --input work/research/2026-06-28_valmontagne_numelyo_collecte.md
+    python analyse.py --input work/research/..._numelyo_collecte.md --only-matches
+    python analyse.py --input work/research/..._numelyo_collecte.md --model-extraction gemma4:26b
+        → work/research/..._numelyo_collecte_analyse_gemma4-26b.md
+    python analyse.py --input work/research/..._numelyo_collecte.md --in-place
 """
 
 from __future__ import annotations
@@ -135,23 +135,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     advanced.add_argument(
         "--enable-ocr",
-        action="store_true",
-        help="Ré-extraire le texte avec PaddleOCR si la couche native est insuffisante.",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Ré-extraire le texte avec PaddleOCR si la couche native est insuffisante. "
+            "--no-enable-ocr désactive malgré config.json."
+        ),
     )
     advanced.add_argument(
         "--auto-ocr",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help=(
-            "Si le texte natif est vide, retenter automatiquement avec PaddleOCR "
-            "(sinon avertissement --enable-ocr)."
+            "Si le texte natif est vide, retenter automatiquement avec PaddleOCR. "
+            "--no-auto-ocr désactive malgré config.json."
         ),
     )
     advanced.add_argument(
         "--two-pass-extraction",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help=(
             "Seconde passe descriptive si la passe stricte ne confirme aucune "
-            "affirmation (pistes en statut insuffisant uniquement)."
+            "affirmation. --no-two-pass-extraction désactive malgré config.json."
         ),
     )
     advanced.add_argument(
@@ -186,9 +192,9 @@ def main(argv: list[str] | None = None) -> int:
         ollama_timeout=args.timeout,
         llm_max_chars=args.max_chars,
         ollama_num_predict=args.num_predict,
-        enable_ocr=True if args.enable_ocr else None,
-        auto_ocr=True if args.auto_ocr else None,
-        two_pass_extraction=True if args.two_pass_extraction else None,
+        enable_ocr=args.enable_ocr,
+        auto_ocr=args.auto_ocr,
+        two_pass_extraction=args.two_pass_extraction,
         ocr_lang=args.ocr_lang,
         llm_provider=args.llm,
         llm_api_key=args.llm_api_key,

@@ -68,6 +68,47 @@ def test_with_overrides_ignores_none():
     assert base.with_overrides(ollama_model="x").ollama_model == "x"
 
 
+def test_load_config_maps_match_mode_and_bools(tmp_path: Path):
+    from models import MatchMode
+
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps(
+            {
+                "match_mode": "fuzzy",
+                "dry_run": True,
+                "verbose": True,
+                "collect_max_workers": 2,
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    assert cfg.match_mode is MatchMode.FUZZY
+    assert cfg.dry_run is True
+    assert cfg.verbose is True
+    assert cfg.collect_max_workers == 2
+
+
+def test_cli_false_overrides_json_true(tmp_path: Path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"dry_run": True, "enable_ocr": True}), encoding="utf-8")
+    cfg = resolve_settings(config_path=path, dry_run=False, enable_ocr=False)
+    assert cfg.dry_run is False
+    assert cfg.enable_ocr is False
+
+
+def test_invalid_jsonc_logs_and_falls_back(tmp_path: Path, caplog):
+    import logging
+
+    path = tmp_path / "config.json"
+    path.write_text("{ not json", encoding="utf-8")
+    with caplog.at_level(logging.ERROR, logger="utils.app_config"):
+        cfg = load_config(path)
+    assert cfg.ollama_host == DEFAULT_OLLAMA_HOST
+    assert any("Invalid JSONC" in r.message for r in caplog.records)
+
+
 def test_nested_llm_block(tmp_path: Path):
     path = tmp_path / "config.json"
     path.write_text(

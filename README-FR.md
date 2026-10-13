@@ -153,8 +153,10 @@ Placez-vous dans le répertoire du projet (étape 0), puis créez un **environne
 | Créer l'environnement | `python -m venv .venv` | `python3 -m venv .venv` | `python3 -m venv .venv` |
 | Activer l'environnement | `.\.venv\Scripts\Activate.ps1` | `source .venv/bin/activate` | `source .venv/bin/activate` |
 | Installer les paquets | `pip install -r requirements.txt` | idem | idem |
-| Client Ollama partagé | `pip install -e ..\shared\ollama_shared` | `pip install -e ../shared/ollama_shared` | `pip install -e ../shared/ollama_shared` |
 | Signe que c'est bon | le prompt affiche `(.venv)` au début de la ligne | idem | idem |
+
+`requirements.txt` installe le client Ollama vendored depuis `vendor/ollama_shared`
+(aucun dépôt voisin requis). OCR optionnel : `pip install -r requirements-ocr.txt`.
 
 **Windows (PowerShell) :**
 ```powershell
@@ -162,7 +164,6 @@ cd C:\chemin\vers\archivtrace
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-pip install -e ..\shared\ollama_shared
 ```
 
 **Linux :**
@@ -171,7 +172,6 @@ cd ~/chemin/vers/archivtrace
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install -e ../shared/ollama_shared
 ```
 
 **WSL (terminal Ubuntu) :**
@@ -180,7 +180,6 @@ cd /mnt/c/Users/VotreNom/chemin/vers/archivtrace
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install -e ../shared/ollama_shared
 ```
 
 > **Windows — si PowerShell refuse d'activer le venv** (« exécution de scripts désactivée »), lancez une fois :  
@@ -214,6 +213,9 @@ Puis exécutez (identique sur les trois environnements) :
 # 1. Collecter les documents sur le mot-clé (un fichier par site)
 python collecte.py --query "valmontagne" --connector numelyo --max-results 5
 
+# 1b. Tous les connecteurs en parallèle (un fichier Markdown par site)
+python collecte.py --query "valmontagne" --connectors all --max-results 5
+
 # 2. Analyse sémantique par l'IA, document par document — plus lent
 python analyse.py --input work/research/2026-06-28_valmontagne_numelyo_collecte.md --only-matches
 
@@ -232,7 +234,7 @@ Les résultats sont dans les dossiers **`work/research/`** et **`work/synthesys/
 
 | | **Windows** | **Linux** | **WSL** |
 |---|---|---|---|
-| OCR optionnel (**PaddleOCR**) | `pip install paddlepaddle paddleocr` | idem | idem |
+| OCR optionnel (**PaddleOCR**) | `pip install -r requirements-ocr.txt` | idem | idem |
 | Exemple d'utilisation | `python analyse.py --input work/research/…_collecte.md --only-matches --enable-ocr` | idem | idem |
 
 ---
@@ -342,7 +344,8 @@ Le matcher mécanique (`keyword_matcher.py`) reste utile : il localise vite les 
 |---|---|---|
 | **Ce README** | Étapes, contrats (citation obligatoire), config, CLI, module propriétaire | Signatures de fonctions, listes de paramètres, algorithmes internes |
 | **Docstrings modules / fonctions** | *Comment* un composant fonctionne | Positionnement produit / guides d'install |
-| **`AGENTS.md` + `.cursor/skills/`** | Conventions agents (chemins, venv, OCR, entrée LLM) | Tutoriels utilisateur |
+| **`AGENTS.md`** (+ `CLAUDE.md`) | Conventions agents portables (chemins, venv, OCR, LLM) | Tutoriels utilisateur |
+| **`.editorconfig`** | Indentation / charset / fins de ligne cross-éditeurs | Règles métier agents |
 
 Privilégier un **flux + tableau de responsabilités + contrat de config**. Quand le comportement change, mettre à jour le flux/tableau ici ; garder le détail d'implémentation dans les docstrings Python.
 
@@ -360,8 +363,7 @@ archivtrace/
 │
 ├── collecte.py                  # CLI collecte — ne contient pas de logique métier
 ├── analyse.py                   # CLI analyse LLM (tâche : extraction)
-├── synthesize.py                # CLI synthèse / contexte (tâche : synthesis)
-├── synthesize.py                # Synthèse corpus (+ option --reverify)
+├── synthesize.py                # CLI synthèse / contexte (+ option --reverify)
 ├── config.py                    # Objet Config typé (dataclass)
 ├── config.json                  # Paramètres LLM / pipeline (JSONC ; bloc llm imbriqué)
 ├── models.py                    # Tous les modèles de données (dataclasses + enums)
@@ -376,6 +378,9 @@ archivtrace/
 │   │   ├── connector.py
 │   │   └── parsing.py
 │   ├── archives_map/            # MPP / Archiv'MH (Ligeo)
+│   │   ├── connector.py
+│   │   └── parsing.py
+│   ├── gallica/                 # BnF Gallica (SRU)
 │   │   ├── connector.py
 │   │   └── parsing.py
 │   └── catalog_html/            # Template générique HTML
@@ -421,7 +426,7 @@ archivtrace/
 │
 ├── prompts/                     # Prompts LLM versionnés (XML ; dernière = plus haut vN)
 │   ├── analyze_document.v2.xml.txt
-│   ├── synthesize_claims.v2.xml.txt
+│   ├── synthesize_claims.v3.xml.txt
 │   ├── classify_source.v1.xml.txt
 │   └── article_context.v1.xml.txt
 ├── utils/
@@ -443,8 +448,11 @@ archivtrace/
 Package externe partagé (sibling) :
 
 ```
-../shared/ollama_shared/         # Client Ollama factorisé (YouTube2Post, etc.)
+vendor/ollama_shared/            # Client Ollama vendored (pip install -e)
 ```
+
+Sibling optionnel pour partage multi-projets : `../shared/ollama_shared/` (même API ; YouTube2Post).
+
 
 ### Séparation des responsabilités
 
@@ -588,6 +596,22 @@ python collecte.py --query "pontarlier" --connector archives_map --max-results 2
 python collecte.py --query "pontarlier" --connector archives_map --dry-run --max-results 5
 ```
 
+### Gallica (`gallica`)
+
+Site : [gallica.bnf.fr](https://gallica.bnf.fr) — bibliothèque numérique de la BnF.
+
+- Recherche via l’API SRU officielle (`/SRU`, CQL `gallica all "…"`) — pas de scraping de l’UI web
+- Notices ARK (`/ark:/12148/…`) ; métadonnées Dublin Core + vignettes dans la réponse SRU
+- Téléchargement : PDF (`/f1.pdf`), aperçu medres pour les périodiques (calendrier `/date`), IIIF JPEG pour images/cartes
+- Pagination SRU : `startRecord` / `maximumRecords` (max 50)
+
+```bash
+python collecte.py --query "valmontagne" --connector gallica --max-results 20
+python collecte.py --query "valmontagne" --connector gallica --dry-run --max-results 5
+```
+
+Fixture de test : `tests/fixtures/gallica_sru_sample.xml`.
+
 ### Catalog HTML (`catalog_html`) — template multi-sources
 
 Connecteur générique pour sites institutionnels avec recherche GET + liste de liens HTML.
@@ -641,14 +665,14 @@ Image : PaddleOCR direct (API predict() 3.x, repli ocr() 2.x)
 | Détail | Comportement dans le code |
 |---|---|
 | Module | `pipeline/ocr_extractor.py` → classe `OcrExtractor` |
-| Dépendances | `paddlepaddle`, `paddleocr` (voir `requirements.txt`) |
+| Dépendances | `paddlepaddle`, `paddleocr` (voir `requirements-ocr.txt`) |
 | Langue CLI | `--ocr-lang fra` (défaut) → code PaddleOCR `fr` ; `eng`/`en` → `en` |
 | Extracteur rapporté | `ocr_paddle` (PDF) / `ocr_paddle_image` (illustration) |
 | CPU Windows | initialisation avec `enable_mkldnn=False` (évite un bug PaddlePaddle 3.3.x oneDNN/PIR) |
 | Premier run | téléchargement des modèles officiels (~centaines de Mo, cache `~/.paddlex/`) |
 
 ```bash
-pip install paddlepaddle paddleocr
+pip install -r requirements-ocr.txt
 
 # Collecte ou analyse avec OCR
 python collecte.py --query "sujet" --connector numelyo --enable-ocr --ocr-lang fra
@@ -712,13 +736,19 @@ Pour **chaque document** dont le PDF est disponible dans `work/downloads/` :
 3. Sélectionne les pages pertinentes (celles avec matches + voisines)
 4. Envoie un échantillon de texte (max `llm_max_chars`, défaut 12 000) au modèle **extraction**
 5. Demande des **affirmations JSON** (citation + affirmation + confiance + statut), puis rend un Markdown additif (sections historiques + bloc JSON)
-6. Met à jour la section **« Idées extraites (LLM) »** dans le Markdown de collecte
+6. Met à jour la section **« Idées extraites (LLM) »** (fichier d'analyse séparé par défaut)
 
 **Important :** cette étape est **lente** (plusieurs minutes par document avec un gros modèle). Utiliser `--only-matches` pour ne traiter que les sources pertinentes.
 
 ```bash
-python analyse.py --input work/research/2026-06-28_valmontagne_collecte.md --only-matches
+python analyse.py --input work/research/2026-06-28_valmontagne_numelyo_collecte.md --only-matches
 ```
+
+Par défaut `analyse.py` écrit un **fichier séparé**
+`…_collecte_analyse_{model}.md` à côté de la collecte. Utiliser `--in-place`
+pour enrichir le Markdown de collecte lui-même. Pour une synthèse multi-sites
+(`synthesize.py --query`), les fichiers d'analyse sont préférés aux collectes
+brutes lorsqu'ils existent.
 
 ---
 
@@ -896,9 +926,20 @@ Profil recommandé archives PDF (à activer manuellement) :
 "analyse": { "auto_ocr": true, "two_pass_extraction": true }
 ```
 
-API appelable (futur front) : `pipeline.run_api.run_collect` / `run_analyse` /
-`run_synthesize` / `run_reverify` (retour `RunResult` : `exit_code`, `paths`,
-`quality_report_path` optionnel). Pas de couche HTTP pour l’instant.
+API appelable (scripts / futur front) : `pipeline.run_api.run_collect` /
+`run_analyse` / `run_synthesize` / `run_reverify` (retour `RunResult` : `exit_code`,
+`paths`, `quality_report_path`, `errors`, `stats`). Pas de couche HTTP pour
+l’instant — appeler les helpers Python directement :
+
+```python
+from config import Config
+from pipeline.run_api import run_collect, run_analyse, run_synthesize
+
+cfg = Config()
+collect = run_collect(cfg, queries=["valmontagne"], connectors="all")
+analyse = run_analyse(cfg, input_path=collect.path, only_matches=True)
+synth = run_synthesize(cfg, query="valmontagne")
+```
 
 ### `config.json` — paramètres persistants (JSONC)
 
@@ -967,7 +1008,8 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
-pip install -e ../shared/ollama_shared   # client Ollama partagé
+# optionnel: pip install -r requirements-dev.txt   # pytest, ruff, pyright
+# optionnel: pip install -r requirements-ocr.txt  # PaddleOCR
 ```
 
 ### Ollama
@@ -983,7 +1025,7 @@ ollama pull llama3.2  # repli optionnel
 
 ```bash
 # OCR — PaddleOCR (pip only, pas de Tesseract)
-pip install paddlepaddle paddleocr
+pip install -r requirements-ocr.txt
 
 # Navigateur automatisé (dernier recours)
 pip install playwright && playwright install chromium
@@ -1012,7 +1054,8 @@ python collecte.py --query "sujet" --connector numelyo --enable-ocr --ocr-lang f
 | Argument | Défaut | Description |
 |---|---|---|
 | `--query` / `--queries-file` | — | Requête(s) — l'un des deux est requis |
-| `--connector` | `numelyo` | Connecteur source (`numelyo`, `archives_rhone`, `archives_map`, `catalog_html`) |
+| `--connector` | `numelyo` | Connecteur unique (ignoré si `--connectors` est défini) |
+| `--connectors` | — | `all` ou liste `gallica,numelyo,…` — collecte **parallèle** par site |
 | `--output-dir` | `work/research` | Dossier Markdown |
 | `--download-dir` | `work/downloads` | Cache PDF / images |
 | `--dry-run` | off | Sans téléchargement lourd |
@@ -1028,16 +1071,17 @@ python collecte.py --query "sujet" --connector numelyo --enable-ocr --ocr-lang f
 
 ```bash
 # Analyser les sources avec au moins un match mécanique
-python analyse.py --input work/research/2026-06-28_valmontagne_collecte.md --only-matches
+# → écrit …_numelyo_collecte_analyse_{model}.md par défaut
+python analyse.py --input work/research/2026-06-28_valmontagne_numelyo_collecte.md --only-matches
 
 # Forcer la ré-analyse de toutes les sources
-python analyse.py --input work/research/2026-06-28_valmontagne_collecte.md --force
+python analyse.py --input work/research/2026-06-28_valmontagne_numelyo_collecte.md --force
 
 # Modèle d'extraction explicite (n'écrase pas le fichier de collecte)
-python analyse.py --input work/research/…_collecte.md --model-extraction gemma4:26b --only-matches
+python analyse.py --input work/research/…_numelyo_collecte.md --model-extraction gemma4:26b --only-matches
 
-# Écrire dans un autre fichier
-python analyse.py --input work/research/…_collecte.md --output work/research/…_collecte_analyse_eval.md
+# Enrichir le fichier de collecte sur place
+python analyse.py --input work/research/…_numelyo_collecte.md --in-place --only-matches
 ```
 
 | Argument | Défaut | Description |
@@ -1108,7 +1152,7 @@ text = gateway.complete(prompt, system="…")
 
 | Fournisseur (`llm_provider` / `--llm`) | Notes |
 |---|---|
-| `ollama` (défaut) | Local via `../shared/ollama_shared` ; liste `/api/tags` + repli si besoin |
+| `ollama` (défaut) | Local via `vendor/ollama_shared` ; liste `/api/tags` + repli si besoin |
 | `openai` / `openrouter` / `perplexity` | HTTP compatible OpenAI ; définir la `*_API_KEY` correspondante |
 | `none` | Synthèse template uniquement (pas d'appel API) |
 
@@ -1117,7 +1161,9 @@ text = gateway.complete(prompt, system="…")
 
 `pipeline/llm_client.py` ne fait que **réexporter** la gateway (et `get_model_for_task`).
 
-Le transport Ollama est factorisé dans `../shared/ollama_shared/` et réutilisé par :
+Le transport Ollama est vendored sous `vendor/ollama_shared/` (installé par
+`requirements.txt`). Un checkout sibling `../shared/ollama_shared` reste
+compatible et est réutilisé par :
 
 - **ArchivTrace** (ce projet) — quand `llm_provider=ollama`
 - **[YouTube2Post](https://github.com/fdepierre/YouTube2Post)** — chat sur transcripts
@@ -1168,7 +1214,8 @@ Exécuter **T0 → T1** avant chaque merge. Exécuter **T2** lors d’un changem
 
 | Domaine | Fichiers de test |
 |---|---|
-| Connecteurs (Numelyo, Rhône, Archiv'MH, catalog HTML) | `test_numelyo_connector.py`, `test_archives_rhone_connector.py`, `test_archives_map_connector.py`, `test_catalog_html_connector.py` |
+| Connecteurs (Numelyo, Rhône, Archiv'MH, Gallica, catalog HTML) | `test_numelyo_connector.py`, `test_archives_rhone_connector.py`, `test_archives_map_connector.py`, `test_gallica_connector.py`, `test_catalog_html_connector.py`, `test_connectors_registry.py` |
+| API callable (`run_*`) | `test_run_api_result.py`, `test_run_api_pipeline.py` |
 | Stratégies de téléchargement / collector dry-run | `test_strategies.py`, `test_collector.py` |
 | Mots-clés, chemins, merge, chaînes | `test_keyword_matcher.py`, `test_research_paths.py`, `test_analyse_paths.py`, `test_merge_collections.py`, `test_strings.py` |
 | PDF / OCR / politique d’analyse | `test_text_extractor.py`, `test_ocr.py`, `test_collection_analyzer.py`, `test_analyse_policy.py` |
@@ -1178,12 +1225,13 @@ Exécuter **T0 → T1** avant chaque merge. Exécuter **T2** lors d’un changem
 | Validation historique (corroboration, critique externe, NLI, CoVe) | `test_historical_validation.py` |
 | Comparaison Ollama live | `test_model_comparison_rochecardon.py` |
 
-### État au 2026-08-11
+### État au 2026-10-13
 
 | Contrôle | Résultat |
 |---|---|
-| Tests collectés (sans Ollama live) | 175 |
-| T0+T1 | **175 passed** |
+| Tests collectés (sans Ollama live) | 232 |
+| T0+T1 | **232 passed** (`pytest -m "not live"`) |
+| Connecteurs | numelyo, archives_rhone, archives_map, gallica, catalog_html |
 | Validation historique | corroboration + critique externe + NLI + CoVe |
 | Scripts | `synthesize.py` (`--reverify` pour recontrôle) |
 
@@ -1239,19 +1287,21 @@ Recherche documentaire sur « valmontagne » dans la presse lyonnaise (Numelyo) 
 python collecte.py --query "valmontagne" --connector numelyo --max-results 3
 
 # 2. Analyse LLM par document (sources avec matches)
-python analyse.py --input work/research/2026-06-28_valmontagne_collecte.md --only-matches
+#    Par défaut : écrit un fichier frère …_collecte_analyse_{model}.md
+python analyse.py --input work/research/2026-06-28_valmontagne_numelyo_collecte.md --only-matches
 
-# 3. Synthèse globale du corpus
-python synthesize.py --input work/research/2026-06-28_valmontagne_collecte.md
+# 3. Synthèse globale du corpus (préférer --query pour récupérer les analyses)
+python synthesize.py --query "valmontagne"
 
 # 4. Dossier de contexte pour rédiger votre texte
-python synthesize.py --input work/research/2026-06-28_valmontagne_collecte.md --mode contexte
+python synthesize.py --query "valmontagne" --mode contexte
 ```
 
 Résultat dans `work/research/` / `work/synthesys/` :
 
 ```
-2026-06-28_valmontagne_collecte.md    ← sources, extraits, idées LLM
+2026-06-28_valmontagne_numelyo_collecte.md
+2026-06-28_valmontagne_numelyo_collecte_analyse_gemma4-26b.md
 2026-06-28_valmontagne_synthese.md    ← note de recherche
 2026-06-28_valmontagne_contexte.md    ← prêt pour la rédaction
 ```

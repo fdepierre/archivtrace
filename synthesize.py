@@ -123,19 +123,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Timeout de génération LLM (s) — défaut: config.json ou Config.",
     )
     advanced.add_argument(
+        "--facts-mode",
+        choices=["tiered", "strict", "all"],
+        default=None,
+        help=(
+            "Promotion des faits: tiered (défaut) | strict | all. "
+            "Surcharge synthesis.facts_mode dans config.json."
+        ),
+    )
+    advanced.add_argument(
         "--allow-single-source-facts",
         action="store_true",
         help=(
-            "Legacy: alias de synthesis.facts_mode=all "
-            "(préférer config.json)."
+            "Legacy: alias de --facts-mode all "
+            "(préférer --facts-mode ou config.json)."
         ),
     )
     advanced.add_argument(
         "--legacy-corroboration",
         action="store_true",
         help=(
-            "Legacy: alias de synthesis.facts_mode=strict "
-            "(préférer config.json)."
+            "Legacy: alias de --facts-mode strict "
+            "(préférer --facts-mode ou config.json)."
         ),
     )
     advanced.add_argument(
@@ -199,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         research_dir=args.research_dir,
         output_dir=args.output_dir,
         llm_provider=args.llm,
+        facts_mode=args.facts_mode,
         allow_single_source_facts=bool(args.allow_single_source_facts),
         legacy_corroboration=bool(args.legacy_corroboration),
         verify_cove=True if args.verify_cove else None,

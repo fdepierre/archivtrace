@@ -8,7 +8,12 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12"]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -16,20 +21,22 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install dependencies (no editable shared / no PaddleOCR)
+      - name: Install dependencies
+        shell: bash
         run: |
           python -m pip install --upgrade pip
-          # Strip local editable path and heavy OCR stack for CI unit tests.
-          grep -vE '^-e |^paddle' requirements.txt > /tmp/requirements-ci.txt
-          pip install -r /tmp/requirements-ci.txt
-          pip install -e ./ci/ollama_shared
-          pip install pytest
+          pip install -r requirements-dev.txt
+
+      - name: Ruff
+        run: python -m ruff check pipeline connectors strategies utils models.py config.py collecte.py analyse.py synthesize.py tests
+
+      - name: Pyright
+        run: python -m pyright --project pyproject.toml
 
       - name: Run unit tests
-        run: |
-          pytest tests/ -q --tb=short -m "not live"
+        run: python -m pytest tests/ -q --tb=short -m "not live"
         env:
           PYTHONUTF8: "1"

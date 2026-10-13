@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ollama-shared"
+version = "0.1.0"
+description = "Vendored Ollama client for ArchivTrace (compatible with YouTube2Post sibling)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ollama>=0.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ollama_shared*"]

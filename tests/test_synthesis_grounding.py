@@ -208,8 +208,8 @@ def test_rochecardon_prudent_render_no_toxique(tmp_path):
         )
     ]
     syn = Synthesizer(llm=None)
-    structured = syn._structured_from_validated(catalog, validated, [])
-    body = syn._render_validated_body(validated)
+    structured = syn.structured_from_validated(catalog, validated, [])
+    body = syn.render_validated_body(validated)
     result = SynthesisResult(
         query="Rochecardon",
         source_path="test",

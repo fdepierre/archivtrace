@@ -8,15 +8,12 @@ pymupdf>=1.24      # imported as "fitz" — primary extractor
 pdfplumber>=0.11   # fallback extractor
 pypdf>=4.2         # last-resort extractor
 
-# LLM local (synthèse) — client partagé avec YouTube2Post
+# LLM local (synthèse) — vendored client (also used by YouTube2Post)
 ollama>=0.4
--e ../shared/ollama_shared
+-e ./vendor/ollama_shared
 
 # Structured validation of LLM JSON outputs (analyse / synthèse prompts)
 pydantic>=2.6
 
-# OCR (--enable-ocr) via PaddleOCR — pip only, no Tesseract system binary
-# First run downloads recognition models (~hundreds of MB).
-# Note: ocr_extractor disables MKLDNN (PaddlePaddle 3.3.x CPU/PIR bug).
-paddlepaddle>=3.0.0
-paddleocr>=3.0.0
+# Optional OCR: pip install -r requirements-ocr.txt
+# Optional Playwright: pip install playwright && playwright install chromium

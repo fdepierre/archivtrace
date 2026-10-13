@@ -1,0 +1,6 @@
+# Optional OCR stack (PaddleOCR) — install only when using --enable-ocr.
+# First run downloads recognition models (~hundreds of MB) into ~/.paddlex/.
+# Note: ocr_extractor disables MKLDNN (PaddlePaddle 3.3.x CPU/PIR bug).
+-r requirements.txt
+paddlepaddle>=3.0.0
+paddleocr>=3.0.0

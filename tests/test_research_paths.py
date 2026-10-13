@@ -59,3 +59,21 @@ def test_discover_prefers_analyse_per_connector(tmp_path: Path):
     assert "2026-08-02_rochecardon_archives_rhone_collecte.md" in names
     assert "2026-08-01_rochecardon_numelyo_collecte.md" not in names
     assert all("pontarlier" not in n for n in names)
+
+
+def test_parse_gallica_filename():
+    path = Path("2026-10-13_valmontagne_gallica_collecte.md")
+    info = parse_research_filename(path)
+    assert info is not None
+    assert info.query_slug == "valmontagne"
+    assert info.connector == "gallica"
+    assert info.is_analyse is False
+
+
+def test_discover_includes_gallica(tmp_path: Path):
+    (tmp_path / "2026-10-13_valmontagne_gallica_collecte.md").write_text("g", encoding="utf-8")
+    (tmp_path / "2026-10-13_valmontagne_numelyo_collecte.md").write_text("n", encoding="utf-8")
+    found = discover_corpus_files(tmp_path, "valmontagne")
+    names = [p.name for p in found]
+    assert "2026-10-13_valmontagne_gallica_collecte.md" in names
+    assert "2026-10-13_valmontagne_numelyo_collecte.md" in names

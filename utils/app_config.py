@@ -7,11 +7,17 @@ LLM settings may be declared as a nested ``llm`` object (preferred for a future
 online service) or as legacy flat keys (``llm_provider``, ``ollama_model``, …).
 """
 from __future__ import annotations
+
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
+
 from config import Config
+from models import MatchMode
+
+logger = logging.getLogger(__name__)
 CONFIG_FILENAME = "config.json"
 # Strip // and /* */ outside of JSON strings.
 _STRING_OR_COMMENT_RE = re.compile(
@@ -47,9 +53,20 @@ def load_json_config(path: Path | None = None) -> dict[str, Any]:
     try:
         raw = path.read_text(encoding="utf-8")
         data = json.loads(strip_jsonc(raw))
-    except (OSError, json.JSONDecodeError):
+    except OSError as exc:
+        logger.error("Cannot read config file %s: %s", path, exc)
+        return {}
+    except json.JSONDecodeError as exc:
+        logger.error(
+            "Invalid JSONC in %s (line %s col %s): %s — using defaults",
+            path,
+            exc.lineno,
+            exc.colno,
+            exc.msg,
+        )
         return {}
     if not isinstance(data, dict):
+        logger.error("Config root in %s must be a JSON object — using defaults", path)
         return {}
     return {key: value for key, value in data.items() if not str(key).startswith("_")}
 
@@ -159,8 +176,11 @@ def load_config(path: Path | None = None) -> Config:
         "timeout": float,
         "delay": float,
         "max_results": int,
+        "collect_max_workers": int,
         "context_window": int,
         "max_excerpts": int,
+        "dry_run": bool,
+        "verbose": bool,
         "enable_ocr": bool,
         "auto_ocr": bool,
         "two_pass_extraction": bool,
@@ -182,7 +202,13 @@ def load_config(path: Path | None = None) -> Config:
         try:
             overrides[key] = caster(data[key])
         except (TypeError, ValueError):
+            logger.warning("Ignoring invalid config value for %r: %r", key, data[key])
             continue
+    if "match_mode" in data and data["match_mode"]:
+        try:
+            overrides["match_mode"] = MatchMode(str(data["match_mode"]).strip().lower())
+        except ValueError:
+            logger.warning("Ignoring invalid match_mode: %r", data["match_mode"])
     if "output_dir" in data and data["output_dir"]:
         overrides["output_dir"] = Path(str(data["output_dir"]))
     if "download_dir" in data and data["download_dir"]:

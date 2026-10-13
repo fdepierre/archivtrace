@@ -7,7 +7,9 @@ Policies (OCR, facts mode, NLI/CoVe) live on Config / config.json.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -33,11 +35,15 @@ class RunResult:
     ``exit_code``: 0 success, 1 partial failure (collect batch), 2 hard error.
     ``paths``: Markdown artefacts written (collect may write several).
     ``quality_report_path``: optional quality report under ``work/logs/llm/``.
+    ``errors``: human-readable failure messages (empty on full success).
+    ``stats``: optional counters for UI / scripting (sources, matches, …).
     """
 
     exit_code: int
     paths: tuple[Path, ...] = ()
     quality_report_path: Path | None = None
+    errors: tuple[str, ...] = ()
+    stats: dict[str, int | str | float | bool] | None = None
 
     @property
     def ok(self) -> bool:
@@ -48,26 +54,50 @@ class RunResult:
         return self.paths[0] if self.paths else None
 
 
-def run_collect(
+def resolve_collect_connectors(
     cfg: Config,
     *,
-    queries: list[str],
-    connector: str = "numelyo",
-) -> RunResult:
-    """Run documentary collection for each query.
+    connector: str | None = "numelyo",
+    connectors: str | None = None,
+) -> list[str]:
+    """Expand ``--connectors`` / ``--connector`` into a validated connector list."""
+    from connectors import REGISTRY, available_connectors, production_connectors
 
-    ``exit_code`` is 0 on full success, 1 if at least one query failed, 2 on
-    configuration / empty-input errors.
-    """
+    if connectors is not None:
+        spec = connectors.strip()
+        if not spec:
+            raise ValueError("Empty --connectors value.")
+        if spec.lower() == "all":
+            include_catalog = bool(cfg.catalog_search_url)
+            return production_connectors(include_catalog=include_catalog)
+        names = [part.strip() for part in spec.split(",") if part.strip()]
+        unknown = [name for name in names if name not in REGISTRY]
+        if unknown:
+            raise ValueError(
+                f"Unknown connector(s): {', '.join(unknown)}. "
+                f"Available: {', '.join(available_connectors())}"
+            )
+        return names
+
+    name = (connector or "numelyo").strip()
+    if name not in REGISTRY:
+        raise ValueError(
+            f"Unknown connector '{name}'. "
+            f"Available: {', '.join(available_connectors())}"
+        )
+    return [name]
+
+
+def _collect_query_connector(
+    cfg: Config,
+    query: str,
+    connector: str,
+) -> tuple[str, str, Path | None, bool]:
+    """Collect one query on one connector; return (query, connector, path, ok)."""
     from connectors import build_connector
     from pipeline.collector import Collector
     from pipeline.markdown_reporter import MarkdownReporter
     from utils.http import HttpClient
-
-    cleaned = [q.strip() for q in queries if q and q.strip()]
-    if not cleaned:
-        logger.error("Aucune requête à traiter.")
-        return RunResult(exit_code=2)
 
     http = HttpClient(
         headers=cfg.headers(),
@@ -76,31 +106,125 @@ def run_collect(
     )
     try:
         conn = build_connector(connector, http, cfg)
-    except KeyError as exc:
-        logger.error("%s", exc)
-        return RunResult(exit_code=2)
+    except KeyError:
+        logger.exception("Connecteur inconnu: %s", connector)
+        return query, connector, None, False
 
     collector = Collector(conn, cfg)
     reporter = MarkdownReporter(max_excerpts=cfg.max_excerpts)
-    written: list[Path] = []
-    exit_code = 0
-    for query in cleaned:
-        logger.info("=== Collecte: %r via %s ===", query, connector)
-        try:
-            collection = collector.collect(query)
-        except Exception:  # noqa: BLE001 - one query must not abort the batch
-            logger.exception("Échec inattendu pour %r", query)
-            exit_code = 1
-            continue
-        path = reporter.write(collection, cfg.output_dir)
-        written.append(path)
-        logger.info(
-            "Markdown écrit: %s (%d source(s), %d matches)",
-            path,
-            len(collection.retained),
-            collection.documents_with_matches,
+    logger.info("=== Collecte: %r via %s ===", query, connector)
+    try:
+        collection = collector.collect(query)
+    except Exception:  # noqa: BLE001 - one pair must not abort the batch
+        logger.exception("Échec inattendu pour %r via %s", query, connector)
+        return query, connector, None, False
+
+    path = reporter.write(collection, cfg.output_dir)
+    logger.info(
+        "Markdown écrit: %s (%d source(s), %d matches)",
+        path,
+        len(collection.retained),
+        collection.documents_with_matches,
+    )
+    return query, connector, path, True
+
+
+def run_collect(
+    cfg: Config,
+    *,
+    queries: list[str],
+    connector: str = "numelyo",
+    connectors: str | None = None,
+) -> RunResult:
+    """Run documentary collection for each query (and connector when multi-site).
+
+    When several connectors are requested, each (query, connector) pair runs in
+    parallel with its own ``HttpClient`` so sites are queried independently.
+
+    ``exit_code`` is 0 on full success, 1 if at least one pair failed, 2 on
+    configuration / empty-input errors.
+    """
+    cleaned = [q.strip() for q in queries if q and q.strip()]
+    if not cleaned:
+        msg = "Aucune requête à traiter."
+        logger.error(msg)
+        return RunResult(exit_code=2, errors=(msg,))
+
+    try:
+        connector_names = resolve_collect_connectors(
+            cfg, connector=connector, connectors=connectors
         )
-    return RunResult(exit_code=exit_code, paths=tuple(written))
+    except ValueError as exc:
+        logger.error("%s", exc)
+        return RunResult(exit_code=2, errors=(str(exc),))
+
+    tasks = [(query, name) for query in cleaned for name in connector_names]
+    written: list[Path] = []
+    errors: list[str] = []
+    exit_code = 0
+    max_workers = max(1, min(int(cfg.collect_max_workers or 1), len(tasks)))
+
+    if len(tasks) == 1:
+        query, name = tasks[0]
+        _query, _name, path, ok = _collect_query_connector(cfg, query, name)
+        if path is not None:
+            written.append(path)
+        if not ok:
+            exit_code = 1
+            errors.append(f"Échec collecte: {query!r} via {name}")
+        return RunResult(
+            exit_code=exit_code,
+            paths=tuple(written),
+            errors=tuple(errors),
+            stats={
+                "queries": len(cleaned),
+                "connectors": len(connector_names),
+                "tasks": len(tasks),
+                "written": len(written),
+            },
+        )
+
+    logger.info(
+        "Collecte parallèle: %d connecteur(s), %d requête(s) → %d tâche(s) "
+        "(max_workers=%d)",
+        len(connector_names),
+        len(cleaned),
+        len(tasks),
+        max_workers,
+    )
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {
+            pool.submit(_collect_query_connector, cfg, query, name): (query, name)
+            for query, name in tasks
+        }
+        for future in as_completed(futures):
+            query, name = futures[future]
+            try:
+                _query, _name, path, ok = future.result()
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Échec inattendu pour %r via %s", query, name)
+                exit_code = 1
+                errors.append(f"Échec inattendu: {query!r} via {name}: {exc}")
+                continue
+            if path is not None:
+                written.append(path)
+            if not ok:
+                exit_code = 1
+                errors.append(f"Échec collecte: {query!r} via {name}")
+
+    written.sort(key=lambda p: p.name)
+    return RunResult(
+        exit_code=exit_code,
+        paths=tuple(written),
+        errors=tuple(errors),
+        stats={
+            "queries": len(cleaned),
+            "connectors": len(connector_names),
+            "tasks": len(tasks),
+            "written": len(written),
+            "max_workers": max_workers,
+        },
+    )
 
 
 def load_synthesis_collection(
@@ -164,7 +288,10 @@ def run_synthesize(
         query=query, input_path=input_path, research_dir=research_dir
     )
     if collection is None:
-        return RunResult(exit_code=2)
+        return RunResult(
+            exit_code=2,
+            errors=("Impossible de charger le corpus de synthèse.",),
+        )
 
     out_dir = output_dir or DEFAULT_SYNTHESIS_DIR
     task_name = "article_context" if mode == "contexte" else "synthesis"
@@ -306,6 +433,12 @@ def run_synthesize(
         exit_code=0,
         paths=(path,),
         quality_report_path=report_path,
+        stats={
+            "sources": len(collection.sources),
+            "grounded_claims": int(result.grounded_claim_count),
+            "mode": mode,
+            "llm_backend": str(result.llm_backend),
+        },
     )
 
 
@@ -326,7 +459,7 @@ def run_reverify(
     nli_llm: bool | None = None,
 ) -> RunResult:
     """Re-apply NLI/CoVe on an existing synthesis Markdown (no narrative regen)."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from pipeline.corroboration_checker import apply_corroboration
     from pipeline.grounded_claims import collect_grounded_claims
@@ -340,14 +473,18 @@ def run_reverify(
     from utils.strings import slugify
 
     if not synthesis_path.exists():
-        logger.error("Synthèse introuvable: %s", synthesis_path)
-        return RunResult(exit_code=2)
+        msg = f"Synthèse introuvable: {synthesis_path}"
+        logger.error(msg)
+        return RunResult(exit_code=2, errors=(msg,))
 
     collection = load_synthesis_collection(
         query=query, input_path=input_path, research_dir=research_dir
     )
     if collection is None:
-        return RunResult(exit_code=2)
+        return RunResult(
+            exit_code=2,
+            errors=("Impossible de charger le corpus pour re-vérification.",),
+        )
 
     promotion_mode = resolve_facts_mode(
         cfg,
@@ -441,16 +578,16 @@ def run_reverify(
         enable_cove=cove,
     )
 
+    from pipeline.synthesis_render import render_validated_body, structured_from_validated
+
     synthesizer = Synthesizer(
         llm=None,
         promotion_mode=promotion_mode,
         verify_nli=False,
         verify_cove=False,
     )
-    structured = synthesizer._structured_from_validated(
-        catalog, report.output, unverified
-    )
-    body = synthesizer._render_validated_body(report.output, report.assessments)
+    structured = structured_from_validated(catalog, report.output, unverified)
+    body = render_validated_body(report.output, report.assessments)
     body = (
         "> Re-vérification post-synthèse (NLI"
         + ("+CoVe" if cove else "")
@@ -468,7 +605,7 @@ def run_reverify(
         body=body,
         llm_backend="reverify",
         model=getattr(llm, "model", None) if llm else None,
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
         references=[
             (s.title, s.source_url, s.connector) for s in collection.sources
         ],
@@ -492,7 +629,16 @@ def run_reverify(
         len(report.nli_results),
         len(report.cove_results),
     )
-    return RunResult(exit_code=0, paths=(path,))
+    return RunResult(
+        exit_code=0,
+        paths=(path,),
+        stats={
+            "sources": len(collection.sources),
+            "faits_etablis": len(report.output.faits_etablis),
+            "nli": len(report.nli_results),
+            "cove": len(report.cove_results),
+        },
+    )
 
 
 def run_analyse(
@@ -543,8 +689,9 @@ def run_analyse(
         logger.error("%s", exc)
         return RunResult(exit_code=2)
     if client is None:
-        logger.error("llm_provider=none : l'analyse documentaire nécessite un LLM.")
-        return RunResult(exit_code=2)
+        msg = "llm_provider=none : l'analyse documentaire nécessite un LLM."
+        logger.error(msg)
+        return RunResult(exit_code=2, errors=(msg,))
 
     model = client.model
     logger.info(
@@ -565,13 +712,24 @@ def run_analyse(
         )
         return RunResult(exit_code=2)
 
-    if not pdf_backend_available():
+    # PDF backends are required for PDF sources; image-only OCR runs still need
+    # at least one PDF backend when collection mixes PDFs, but allow analyse to
+    # proceed when OCR is enabled for image documents.
+    needs_pdf = not (cfg.enable_ocr or cfg.auto_ocr)
+    if needs_pdf and not pdf_backend_available():
         logger.error(missing_pdf_backend_message())
-        return RunResult(exit_code=2)
+        return RunResult(exit_code=2, errors=(missing_pdf_backend_message(),))
+    if not needs_pdf and not pdf_backend_available() and not ocr_available():
+        msg = (
+            "Aucun backend PDF ni OCR disponible. Installer pymupdf/pdfplumber/pypdf "
+            "et/ou paddleocr (requirements-ocr.txt)."
+        )
+        logger.error(msg)
+        return RunResult(exit_code=2, errors=(msg,))
 
     if (cfg.enable_ocr or cfg.auto_ocr) and not ocr_available():
         logger.error(missing_ocr_message())
-        return RunResult(exit_code=2)
+        return RunResult(exit_code=2, errors=(missing_ocr_message(),))
     if cfg.enable_ocr:
         logger.info("OCR activé (lang=%s)", cfg.ocr_lang)
     elif cfg.auto_ocr:
@@ -657,15 +815,25 @@ def run_analyse(
     except Exception as exc:  # noqa: BLE001
         logger.warning("Impossible d'écrire le rapport qualité: %s", exc)
         report_path = None
+    analyse_stats: dict[str, int | str | float | bool] = {
+        "analyzed": stats.sources_analyzed,
+        "skipped": stats.sources_skipped,
+        "failed": stats.sources_failed,
+        "pending_before": pending,
+        "done_before": done,
+    }
     if stats.sources_failed and not stats.sources_analyzed:
         return RunResult(
             exit_code=2,
             paths=(work_path,),
             quality_report_path=report_path,
+            errors=("Analyse: toutes les sources ont échoué.",),
+            stats=analyse_stats,
         )
     return RunResult(
         exit_code=0,
         paths=(work_path,),
         quality_report_path=report_path,
+        stats=analyse_stats,
     )
 
