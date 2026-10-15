@@ -45,6 +45,16 @@ CONNECTOR_INFO: dict[str, ConnectorInfo] = {
         in_production=True,
         notes="Official SRU API; periodicals may resolve to medres previews.",
     ),
+    "wikipedia": ConnectorInfo(
+        name="wikipedia",
+        display_name="Wikipedia",
+        homepage="https://fr.wikipedia.org",
+        in_production=True,
+        notes=(
+            "MediaWiki search + REST plain text; secondary encyclopaedia "
+            "(non-probative by default). Language via wikipedia_lang (default fr)."
+        ),
+    ),
     "catalog_html": ConnectorInfo(
         name="catalog_html",
         display_name="Generic HTML catalog",

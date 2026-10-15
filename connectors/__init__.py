@@ -19,6 +19,7 @@ from connectors.meta import (
     list_connector_info,
 )
 from connectors.numelyo import NumelyoConnector
+from connectors.wikipedia import WikipediaConnector
 from utils.http import HttpClient
 
 # name -> connector class
@@ -28,6 +29,7 @@ REGISTRY: dict[str, type[Connector]] = {
     ArchivesMapConnector.name: ArchivesMapConnector,
     CatalogHtmlConnector.name: CatalogHtmlConnector,
     GallicaConnector.name: GallicaConnector,
+    WikipediaConnector.name: WikipediaConnector,
 }
 
 
@@ -68,6 +70,7 @@ __all__ = [
     "ArchivesMapConnector",
     "CatalogHtmlConnector",
     "GallicaConnector",
+    "WikipediaConnector",
     "REGISTRY",
     "build_connector",
     "available_connectors",

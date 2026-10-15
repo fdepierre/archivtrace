@@ -383,6 +383,9 @@ archivtrace/
 │   ├── gallica/                 # BnF Gallica (SRU)
 │   │   ├── connector.py
 │   │   └── parsing.py
+│   ├── wikipedia/               # Wikipedia (MediaWiki API)
+│   │   ├── connector.py
+│   │   └── parsing.py
 │   └── catalog_html/            # Generic HTML catalog template
 │       └── connector.py
 │
@@ -607,6 +610,22 @@ python collecte.py --query "valmontagne" --connector gallica --dry-run --max-res
 ```
 
 Test fixture: `tests/fixtures/gallica_sru_sample.xml`.
+
+### Wikipedia (`wikipedia`)
+
+Site: [fr.wikipedia.org](https://fr.wikipedia.org) (language configurable).
+
+- Search via MediaWiki Action API (`list=search`) — no HTML scraping
+- Download: plain-text extract via Action API (`prop=extracts&explaintext`) saved as `.txt`
+- Secondary encyclopaedia source (treated as non-probative by default in source classification)
+- Language: `wikipedia_lang` in `config.json` or `--wikipedia-lang en`
+
+```bash
+python collecte.py --query "piste de ski" --connector wikipedia --max-results 5
+python collecte.py --query "ski jumping" --connector wikipedia --wikipedia-lang en --max-results 5
+```
+
+Test fixture: `tests/fixtures/wikipedia_search_sample.json`.
 
 ### Catalog HTML (`catalog_html`) — multi-source template
 
@@ -1217,7 +1236,7 @@ Run **T0 → T1** before every merge. Run **T2** when changing prompts, models, 
 
 | Area | Test files |
 |---|---|
-| Connectors (Numelyo, Rhône, Archiv'MH, Gallica, catalog HTML) | `test_numelyo_connector.py`, `test_archives_rhone_connector.py`, `test_archives_map_connector.py`, `test_gallica_connector.py`, `test_catalog_html_connector.py`, `test_connectors_registry.py` |
+| Connectors (Numelyo, Rhône, Archiv'MH, Gallica, Wikipedia, catalog HTML) | `test_numelyo_connector.py`, `test_archives_rhone_connector.py`, `test_archives_map_connector.py`, `test_gallica_connector.py`, `test_wikipedia_connector.py`, `test_mediawiki_extract.py`, `test_catalog_html_connector.py`, `test_connectors_registry.py` |
 | Callable API (`run_*`) | `test_run_api_result.py`, `test_run_api_pipeline.py` |
 | Download strategies / collector dry-run | `test_strategies.py`, `test_collector.py` |
 | Keywords, paths, merge, strings | `test_keyword_matcher.py`, `test_research_paths.py`, `test_analyse_paths.py`, `test_merge_collections.py`, `test_strings.py` |

@@ -10,6 +10,7 @@ from strategies.base import DownloadStrategy
 from strategies.browser_automation import BrowserAutomationStrategy
 from strategies.direct_download import DirectDownloadStrategy
 from strategies.html_scrape import HtmlScrapeStrategy
+from strategies.mediawiki_extract import MediaWikiExtractStrategy
 from strategies.session_cookie import SessionCookieStrategy
 from strategies.viewer_to_pdf import ViewerToPdfStrategy
 
@@ -19,6 +20,7 @@ __all__ = [
     "ViewerToPdfStrategy",
     "ApiQueryStrategy",
     "HtmlScrapeStrategy",
+    "MediaWikiExtractStrategy",
     "SessionCookieStrategy",
     "BrowserAutomationStrategy",
 ]

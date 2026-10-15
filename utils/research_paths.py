@@ -55,6 +55,7 @@ def _known_connectors() -> list[str]:
             "archives_map",
             "catalog_html",
             "gallica",
+            "wikipedia",
             "numelyo",
         ]
 

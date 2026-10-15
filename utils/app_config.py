@@ -188,6 +188,7 @@ def load_config(path: Path | None = None) -> Config:
         "ocr_dpi": int,
         "catalog_search_url": str,
         "catalog_root": str,
+        "wikipedia_lang": str,
         "environment": str,
         "user_agent": str,
         "synthesis_facts_mode": str,

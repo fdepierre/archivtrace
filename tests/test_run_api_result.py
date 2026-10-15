@@ -40,6 +40,7 @@ def test_resolve_collect_connectors_all_excludes_catalog_html():
     assert "catalog_html" not in names
     assert "numelyo" in names
     assert "gallica" in names
+    assert "wikipedia" in names
 
 
 def test_resolve_collect_connectors_all_includes_catalog_when_configured():

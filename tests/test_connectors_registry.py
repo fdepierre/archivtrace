@@ -23,6 +23,7 @@ def test_registry_includes_production_connectors():
         "archives_rhone",
         "archives_map",
         "gallica",
+        "wikipedia",
         "catalog_html",
     ):
         assert expected in names
@@ -32,6 +33,7 @@ def test_registry_includes_production_connectors():
 def test_production_connectors_excludes_catalog_by_default():
     names = production_connectors()
     assert "gallica" in names
+    assert "wikipedia" in names
     assert "numelyo" in names
     assert "catalog_html" not in names
 

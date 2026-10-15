@@ -68,6 +68,8 @@ DEFAULT_SYNTHESIS_NLI_LLM = False
 DEFAULT_SYNTHESIS_CLASSIFY_SOURCES = False
 # Cap parallel (query × connector) workers during multi-site collection.
 DEFAULT_COLLECT_MAX_WORKERS = 4
+# Wikipedia MediaWiki language subdomain (fr.wikipedia.org by default).
+DEFAULT_WIKIPEDIA_LANG = "fr"
 
 
 @dataclass(slots=True)
@@ -94,6 +96,7 @@ class Config:
     ocr_dpi: int = 200
     catalog_search_url: str | None = None
     catalog_root: str | None = None
+    wikipedia_lang: str = DEFAULT_WIKIPEDIA_LANG
     ollama_host: str = DEFAULT_OLLAMA_HOST
     ollama_model: str = DEFAULT_OLLAMA_MODEL
     llm_max_chars: int = DEFAULT_LLM_MAX_CHARS

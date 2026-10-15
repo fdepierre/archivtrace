@@ -77,4 +77,5 @@ Callable API: `pipeline.run_api.run_collect` / `run_analyse` / `run_synthesize` 
 HTTP layer deferred until a front is needed.
 OCR optional: `pip install -r requirements-ocr.txt`.
 Ollama client: vendored at `vendor/ollama_shared`.
+Wikipedia: `--connector wikipedia` (MediaWiki API; `wikipedia_lang` default `fr`).
 

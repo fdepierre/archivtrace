@@ -1,0 +1,32 @@
+{
+  "batchcomplete": true,
+  "continue": {
+    "sroffset": 2,
+    "continue": "-||"
+  },
+  "query": {
+    "searchinfo": {
+      "totalhits": 128
+    },
+    "search": [
+      {
+        "ns": 0,
+        "title": "Piste de ski",
+        "pageid": 123456,
+        "size": 4200,
+        "wordcount": 612,
+        "snippet": "Une <span class=\"searchmatch\">piste</span> de <span class=\"searchmatch\">ski</span> est un parcours balisé.",
+        "timestamp": "2024-01-15T10:00:00Z"
+      },
+      {
+        "ns": 0,
+        "title": "Lyon",
+        "pageid": 789,
+        "size": 88000,
+        "wordcount": 12000,
+        "snippet": "Ville française, métropole de la région Auvergne-Rhône-Alpes.",
+        "timestamp": "2024-06-01T08:30:00Z"
+      }
+    ]
+  }
+}

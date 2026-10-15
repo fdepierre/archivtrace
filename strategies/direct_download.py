@@ -23,6 +23,11 @@ _KNOWN_FILE_SUFFIXES = frozenset(
         ".jp2",
         ".djvu",
         ".epub",
+        ".txt",
+        ".html",
+        ".htm",
+        ".json",
+        ".xml",
     }
 )
 
@@ -64,6 +69,13 @@ class DirectDownloadStrategy(DownloadStrategy):
         if not url:
             return self._failure("No download_url on resolved document")
         doc_id = document.candidate.document_id or slugify(document.candidate.title)
-        ext = _extension_from_url(url)
+        meta = document.candidate.raw_metadata or {}
+        suggested = meta.get("download_extension")
+        if isinstance(suggested, str) and suggested.strip():
+            ext = suggested.strip().lower()
+            if not ext.startswith("."):
+                ext = f".{ext}"
+        else:
+            ext = _extension_from_url(url)
         filename = safe_filename(f"{doc_id}{ext}")
         return self._fetch_to_file(url, dest_dir, filename, dry_run=dry_run)

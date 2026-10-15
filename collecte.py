@@ -60,8 +60,8 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="SPEC",
         help=(
             "Plusieurs connecteurs : 'all' (numelyo, archives_rhone, archives_map, "
-            "gallica ; + catalog_html si config.json) ou liste séparée par des "
-            "virgules. Exécution parallèle par site."
+            "gallica, wikipedia ; + catalog_html si config.json) ou liste séparée "
+            "par des virgules. Exécution parallèle par site."
         ),
     )
     intention.add_argument(
@@ -147,6 +147,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--catalog-root",
         help="Nom d'hôte / source racine enregistré pour catalog_html.",
     )
+    advanced.add_argument(
+        "--wikipedia-lang",
+        default=None,
+        help="Sous-domaine Wikipedia (défaut: fr → fr.wikipedia.org).",
+    )
     return parser
 
 
@@ -186,6 +191,7 @@ def main(argv: list[str] | None = None) -> int:
         ocr_lang=args.ocr_lang,
         catalog_search_url=args.catalog_search_url,
         catalog_root=args.catalog_root,
+        wikipedia_lang=args.wikipedia_lang,
     )
     queries = load_queries(args)
     return run_collect(
