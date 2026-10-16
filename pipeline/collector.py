@@ -15,6 +15,7 @@ Semantic LLM analysis is a separate step: `analyse.py` on the collecte Markdown.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 
 from config import Config
 from connectors.base import Connector
@@ -42,10 +43,16 @@ class Collector:
         config: Config,
         *,
         extractor: TextExtractor | None = None,
+        reuse_existing: bool = False,
     ) -> None:
-        """Bind connector, config, and optional text extractor."""
+        """Bind connector, config, and optional text extractor.
+
+        ``reuse_existing`` skips HTTP when a non-empty file is already on disk.
+        ``collecte.py`` leaves it off.
+        """
         self.connector = connector
         self.config = config
+        self.reuse_existing = reuse_existing
         self.extractor = extractor or TextExtractor(
             enable_ocr=config.enable_ocr,
             ocr_lang=config.ocr_lang,
@@ -54,15 +61,18 @@ class Collector:
 
     def collect(self, query: str) -> CollectionRun:
         """Process a single query end-to-end and return the run object."""
+        run = self.open_run(query)
+        matcher = self._matcher(query, run)
+        for document in self.iter_documents(query, run, matcher=matcher):
+            run.documents.append(document)
+        self._add_observations(run)
+        return run
+
+    def open_run(self, query: str) -> CollectionRun:
+        """Create an empty run. Search happens when documents are iterated."""
         started = now()
         variants = keyword_variants(query)
-        matcher = KeywordMatcher(
-            query,
-            mode=self.config.match_mode,
-            context_window=self.config.context_window,
-            variants=variants,
-        )
-        run = CollectionRun(
+        return CollectionRun(
             query=query,
             run_id=run_id(started),
             generated_at=started,
@@ -75,12 +85,29 @@ class Collector:
             dry_run=self.config.dry_run,
         )
 
-        candidates = self._safe_search(query, run)
-        for candidate in candidates:
-            run.documents.append(self._process_candidate(candidate, matcher, run))
+    def iter_documents(
+        self,
+        query: str,
+        run: CollectionRun,
+        *,
+        matcher: KeywordMatcher | None = None,
+    ) -> Iterator[CollectedDocument]:
+        """Yield each document as soon as download, extraction and matching finish.
 
-        self._add_observations(run)
-        return run
+        The collector does not call a language model. The caller decides what
+        to do with each document before the next download starts.
+        """
+        matcher = matcher or self._matcher(query, run)
+        for candidate in self._safe_search(query, run):
+            yield self._process_candidate(candidate, matcher, run)
+
+    def _matcher(self, query: str, run: CollectionRun) -> KeywordMatcher:
+        return KeywordMatcher(
+            query,
+            mode=run.match_mode,
+            context_window=run.context_window,
+            variants=run.keyword_variants,
+        )
 
     # -- steps -----------------------------------------------------------
     def _safe_search(self, query: str, run: CollectionRun) -> list[DocumentCandidate]:
@@ -117,7 +144,10 @@ class Collector:
         # 3) download (strategy chosen by the connector)
         download_dir = ensure_dir(self.config.download_dir / candidate.connector)
         result = self.connector.download(
-            resolved, download_dir, dry_run=self.config.dry_run
+            resolved,
+            download_dir,
+            dry_run=self.config.dry_run,
+            reuse_existing=self.reuse_existing,
         )
         doc.download = result
         if result.success and not result.skipped and result.local_path:

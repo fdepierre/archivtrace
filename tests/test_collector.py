@@ -45,3 +45,16 @@ def test_collector_dry_run_produces_run(monkeypatch, tmp_path):
     md = MarkdownReporter().render(run)
     assert "rochecardon" in md
     assert "dry-run" in md
+
+
+def test_iter_documents_yields_each_candidate_without_llm(monkeypatch, tmp_path):
+    config = Config(dry_run=True, delay=0, output_dir=tmp_path, download_dir=tmp_path / "dl")
+    http = HttpClient(headers=config.headers(), delay=0)
+    connector = NumelyoConnector(http, config)
+    monkeypatch.setattr(connector, "search", lambda query: _candidates())
+    collector = Collector(connector, config)
+    run = collector.open_run("rochecardon")
+    seen = list(collector.iter_documents("rochecardon", run))
+    assert len(seen) == 1
+    assert run.documents == []
+    assert seen[0].resolved is not None
