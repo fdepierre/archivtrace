@@ -24,6 +24,7 @@ from pathlib import Path
 
 
 
+from config import DEFAULT_CONNECTOR
 from models import MatchMode
 
 from pipeline.markdown_format import (
@@ -152,7 +153,7 @@ class ParsedCollection:
 
     raw_text: str
 
-    connector: str = "numelyo"
+    connector: str = DEFAULT_CONNECTOR
 
     match_mode: MatchMode = MatchMode.NORMALIZED
 
@@ -254,7 +255,7 @@ def _extract_connector(text: str) -> str:
 
     match = _CONNECTOR_RE.search(text)
 
-    return match.group(1).strip().split(",")[0].strip() if match else "numelyo"
+    return match.group(1).strip().split(",")[0].strip() if match else DEFAULT_CONNECTOR
 
 
 

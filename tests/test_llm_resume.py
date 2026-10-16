@@ -51,7 +51,9 @@ def test_read_collection_marks_timeout_as_failed(tmp_path):
 """,
         encoding="utf-8",
     )
-    src = read_collection(md).sources[0]
+    parsed = read_collection(md)
+    assert parsed.connector == "wikipedia"
+    src = parsed.sources[0]
     assert src.llm_status == "failed"
     assert not src.llm_analyzed
 

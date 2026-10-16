@@ -35,6 +35,18 @@ def test_run_collect_empty_queries_returns_exit_2():
     assert result.errors
 
 
+def test_resolve_collect_connectors_defaults_to_wikipedia():
+    names = resolve_collect_connectors(Config())
+    assert names == ["wikipedia"]
+
+
+def test_collecte_parser_defaults_to_wikipedia():
+    from collecte import build_parser
+
+    args = build_parser().parse_args(["--query", "valmontagne"])
+    assert args.connector == "wikipedia"
+
+
 def test_resolve_collect_connectors_all_excludes_catalog_html():
     names = resolve_collect_connectors(Config(), connectors="all")
     assert "catalog_html" not in names

@@ -70,6 +70,9 @@ DEFAULT_SYNTHESIS_CLASSIFY_SOURCES = False
 DEFAULT_COLLECT_MAX_WORKERS = 4
 # Wikipedia MediaWiki language subdomain (fr.wikipedia.org by default).
 DEFAULT_WIKIPEDIA_LANG = "fr"
+# Single-site fallback when a command names no connector. Wikipedia is global;
+# regional archives stay opt-in. "all" is a choice, not this silent default.
+DEFAULT_CONNECTOR = "wikipedia"
 
 
 @dataclass(slots=True)

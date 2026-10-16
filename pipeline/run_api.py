@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from config import (
+    DEFAULT_CONNECTOR,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_SYNTHESIS_DIR,
     Config,
@@ -57,7 +58,7 @@ class RunResult:
 def resolve_collect_connectors(
     cfg: Config,
     *,
-    connector: str | None = "numelyo",
+    connector: str | None = None,
     connectors: str | None = None,
 ) -> list[str]:
     """Expand ``--connectors`` / ``--connector`` into a validated connector list."""
@@ -79,7 +80,7 @@ def resolve_collect_connectors(
             )
         return names
 
-    name = (connector or "numelyo").strip()
+    name = (connector or DEFAULT_CONNECTOR).strip()
     if name not in REGISTRY:
         raise ValueError(
             f"Unknown connector '{name}'. "
@@ -133,7 +134,7 @@ def run_collect(
     cfg: Config,
     *,
     queries: list[str],
-    connector: str = "numelyo",
+    connector: str = DEFAULT_CONNECTOR,
     connectors: str | None = None,
 ) -> RunResult:
     """Run documentary collection for each query (and connector when multi-site).

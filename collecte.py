@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 from config import (
+    DEFAULT_CONNECTOR,
     DEFAULT_DOWNLOAD_DIR,
     DEFAULT_OUTPUT_DIR,
 )
@@ -51,9 +52,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     intention.add_argument(
         "--connector",
-        default="numelyo",
+        default=DEFAULT_CONNECTOR,
         choices=available_connectors(),
-        help="Connecteur source unique (défaut: numelyo). Ignoré si --connectors est défini.",
+        help=(
+            f"Connecteur source unique (défaut: {DEFAULT_CONNECTOR}). "
+            "Ignoré si --connectors est défini."
+        ),
     )
     intention.add_argument(
         "--connectors",
