@@ -59,11 +59,17 @@ def test_sites_flag_stores_the_choice_and_shows_the_guide(tmp_path: Path, capsys
     assert "// garder" in text
     assert '"wikipedia"' in text
     assert "Collect" in captured.out
-    assert "Analyse" in captured.out
+    assert "Analysis" in captured.out
     assert "Synthesize" in captured.out
+    assert "Available sites" in captured.out
+    assert "python archivtrace.py --sites all" in captured.out
+    assert "no subcommands" in captured.out
     assert "Wikipedia" in captured.out
     assert 'python archivtrace.py --query "valmontagne"' in captured.out
     assert "--refresh" in captured.out
+    assert "python collecte.py --help" in captured.out
+    assert "python analyse.py --help" in captured.out
+    assert "python synthesize.py --help" in captured.out
 
 
 def test_saved_sites_are_listed_again_without_a_question(tmp_path: Path, capsys):
@@ -74,6 +80,8 @@ def test_saved_sites_are_listed_again_without_a_question(tmp_path: Path, capsys)
     captured = capsys.readouterr()
     assert code == 0
     assert "Choix" not in captured.out
+    assert "Available sites" in captured.out
+    assert "python archivtrace.py --sites all" in captured.out
     assert "Wikipedia" in captured.out
     assert "no notebook yet" in captured.out
 

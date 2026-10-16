@@ -13,7 +13,13 @@ from pathlib import Path
 
 from pipeline.workflow_guide import notebook_summaries, render_guide
 from utils.app_config import CONFIG_FILENAME, load_config
-from utils.sites_config import format_catalog, parse_site_choice, read_sites, write_sites
+from utils.sites_config import (
+    catalog_cards,
+    format_catalog,
+    parse_site_choice,
+    read_sites,
+    write_sites,
+)
 
 logger = logging.getLogger("archivtrace")
 
@@ -36,8 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--sites",
         default=None,
         help=(
-            "Save sites (wikipedia, numelyo,gallica, all). "
-            "An empty answer on first launch stores wikipedia."
+            "Replace the saved site list: all, a catalog number (1 or 2,4), "
+            "or a name (wikipedia)."
         ),
     )
     parser.add_argument(
@@ -61,9 +67,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
-        "--toutes-les-sources",
+        "--all-sources",
         action="store_true",
         help="Also analyse documents that have no mechanical keyword match.",
+    )
+    parser.add_argument(
+        "--toutes-les-sources",
+        action="store_true",
+        dest="all_sources",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--dry-run",
@@ -156,6 +168,7 @@ def main(
         text = render_guide(
             sites=sites,
             summaries=notebook_summaries(research_dir),
+            cards=catalog_cards(cfg),
         )
         print(text, end="")
         return 0
@@ -179,7 +192,7 @@ def main(
             refresh=args.refresh,
             from_scratch=args.from_scratch,
             collecte_seule=args.collect_only or args.collecte_seule,
-            only_matches=not args.toutes_les_sources,
+            only_matches=not args.all_sources,
             dry_run=args.dry_run,
             research_dir=research_dir,
             on_progress=board.update,

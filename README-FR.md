@@ -212,7 +212,7 @@ python archivtrace.py --query "valmontagne" --refresh
 python archivtrace.py --query "valmontagne" --from-scratch
 ```
 
-Sans argument, elle affiche le workflow, les sites enregistrés dans `config.json` (`sites`) et la prochaine commande. Le premier lancement demande ces sites : Entrée enregistre Wikipédia, `all` enregistre les connecteurs en production ce jour-là. Une relance ne retourne pas sur les archives : elle finit les fichiers manquants et les analyses en attente. `--refresh` cherche des documents nouveaux. `--from-scratch` recommence. `--collect-only` n'appelle pas le modèle.
+Sans argument, elle affiche le workflow, tous les sites disponibles, les sites enregistrés dans `config.json` (`sites`), des exemples à copier, et les trois commandes plus fines (`collecte.py`, `analyse.py`, `synthesize.py`). Ces exemples sont des options de la même commande, pas des sous-commandes. `--sites all` enregistre tous les sites en production ; `--sites 1` ou `--sites 2,4` enregistre les lignes numérotées. Une relance ne retourne pas sur les archives : elle finit les fichiers manquants et les analyses en attente. `--refresh` cherche des documents nouveaux. `--from-scratch` recommence. `--collect-only` n'appelle pas le modèle.
 
 `collecte.py` sans `--connector` utilise maintenant Wikipédia. Nommez le site quand vous en voulez un autre (`--connector numelyo`).
 

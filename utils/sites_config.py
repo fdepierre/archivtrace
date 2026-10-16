@@ -55,16 +55,26 @@ def catalog_cards(cfg: Config | None = None) -> list[SiteCard]:
     return cards
 
 
-def format_catalog(cfg: Config | None = None) -> str:
-    """Plain-text catalog. ``tous`` is the featured line; Enter means Wikipedia."""
+def format_site_rows(
+    cards: list[SiteCard],
+    *,
+    saved: set[str] | None = None,
+) -> list[str]:
+    """Numbered catalog. ``all`` is the first row; saved names are marked."""
+    chosen = saved or set()
     lines = [
-        "Sites",
         "  *  all                                        every production site",
     ]
-    for card in catalog_cards(cfg):
+    for card in cards:
         home = card.homepage or "—"
-        lines.append(f"  {card.number:<2} {card.display_name:<42} {home}")
-    lines.append("")
+        mark = "  saved" if card.name in chosen else ""
+        lines.append(f"  {card.number:<2} {card.display_name:<42} {home}{mark}")
+    return lines
+
+
+def format_catalog(cfg: Config | None = None) -> str:
+    """Plain-text catalog. ``all`` is the featured line; Enter means Wikipedia."""
+    lines = ["Sites", *format_site_rows(catalog_cards(cfg)), ""]
     lines.append("Choice (* suggested, Enter = Wikipedia):")
     return "\n".join(lines)
 
