@@ -12,15 +12,17 @@ def test_board_columns_follow_the_workflow():
     board.update("Search wikipedia")
     board.update("Download Notice A")
     board.update("Analysis Notice A")
+    board.update("Synthesis written")
     text = board.render()
     assert "valmontagne · wikipedia" in text
     assert "Search" in text
     assert "Notice A" in text
-    assert "not yet" in text
+    assert "written" in text
     assert board.events == [
         "Search wikipedia",
         "Download Notice A",
         "Analysis Notice A",
+        "Synthesis written",
     ]
 
 

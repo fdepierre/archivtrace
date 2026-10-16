@@ -56,6 +56,13 @@ class OcrExtractor:
             return ExtractedText(error="OCR fallback supports PDF and raster images only")
 
         try:
+            import warnings
+
+            warnings.filterwarnings(
+                "ignore",
+                message=r"The `fitz` API is deprecated",
+                category=DeprecationWarning,
+            )
             import fitz  # type: ignore
         except ImportError as exc:
             return ExtractedText(error=f"PyMuPDF required for PDF OCR ({exc})")

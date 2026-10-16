@@ -156,6 +156,13 @@ class TextExtractor:
     @staticmethod
     def _extract_pymupdf(path: Path) -> list[ExtractedPage] | None:
         try:
+            import warnings
+
+            warnings.filterwarnings(
+                "ignore",
+                message=r"The `fitz` API is deprecated",
+                category=DeprecationWarning,
+            )
             import fitz  # type: ignore  # PyMuPDF
         except ImportError:
             return None
