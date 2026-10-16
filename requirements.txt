@@ -15,5 +15,8 @@ ollama>=0.4
 # Structured validation of LLM JSON outputs (analyse / synthèse prompts)
 pydantic>=2.6
 
+# Researcher progress board (archivtrace). Plain lines are used when there is no terminal.
+rich>=13.7
+
 # Optional OCR: pip install -r requirements-ocr.txt
 # Optional Playwright: pip install playwright && playwright install chromium

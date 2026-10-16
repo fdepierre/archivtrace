@@ -66,6 +66,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Recherche et résolution, sans téléchargement ni modèle.",
     )
     parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Journal ligne à ligne, sans tableau vivant.",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -153,19 +158,27 @@ def main(
     from dataclasses import replace
 
     from pipeline.archivtrace_session import run_archivtrace
+    from pipeline.progress_board import ProgressBoard
 
     run_cfg = replace(cfg, output_dir=research_dir)
-    return run_archivtrace(
-        run_cfg,
+    interactive = sys.stdout.isatty() and not args.verbose
+    with ProgressBoard(
         query=args.query,
         sites=sites,
-        refresh=args.refresh,
-        from_scratch=args.from_scratch,
-        collecte_seule=args.collecte_seule,
-        only_matches=not args.toutes_les_sources,
-        dry_run=args.dry_run,
-        research_dir=research_dir,
-    )
+        interactive=interactive,
+    ) as board:
+        return run_archivtrace(
+            run_cfg,
+            query=args.query,
+            sites=sites,
+            refresh=args.refresh,
+            from_scratch=args.from_scratch,
+            collecte_seule=args.collecte_seule,
+            only_matches=not args.toutes_les_sources,
+            dry_run=args.dry_run,
+            research_dir=research_dir,
+            on_progress=board.update,
+        )
 
 
 if __name__ == "__main__":
