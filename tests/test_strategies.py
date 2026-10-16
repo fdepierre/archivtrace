@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from config import Config
 from models import DocumentCandidate, ResolvedDocument
+from strategies.direct_download import DirectDownloadStrategy
 from strategies.viewer_to_pdf import ViewerToPdfStrategy
-from utils.http import HttpClient
+from utils.http import HttpClient, HttpResponse
 
 
 def make_strategy() -> ViewerToPdfStrategy:
@@ -72,3 +73,43 @@ def test_dry_run_skips_download(tmp_path):
     assert result.skipped is True
     assert result.local_path is None
     assert not list(tmp_path.iterdir())  # nothing written
+
+
+class _FakeHttp:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def download(self, url: str, dest, **kwargs):
+        self.calls += 1
+        dest.write_bytes(b"%PDF-1.4")
+        return HttpResponse(
+            url=url,
+            status_code=200,
+            text="",
+            content=b"",
+            headers={"Content-Type": "application/pdf"},
+        )
+
+
+def test_download_writes_part_then_renames_and_can_reuse(tmp_path):
+    config = Config()
+    http = _FakeHttp()
+    strategy = DirectDownloadStrategy(http, config)  # type: ignore[arg-type]
+    resolved = make_resolved(
+        document_id="DOC1",
+        download_url="https://example.org/doc.pdf",
+    )
+    first = strategy.download(resolved, tmp_path, dry_run=False, reuse_existing=True)
+    assert first.success is True
+    assert first.skipped is False
+    assert first.local_path is not None
+    assert first.local_path.name == "DOC1.pdf"
+    assert not (tmp_path / "DOC1.pdf.part").exists()
+    assert http.calls == 1
+
+    second = strategy.download(resolved, tmp_path, dry_run=False, reuse_existing=True)
+    assert second.skipped is True
+    assert http.calls == 1
+
+    strategy.download(resolved, tmp_path, dry_run=False, reuse_existing=False)
+    assert http.calls == 2

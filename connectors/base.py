@@ -76,7 +76,12 @@ class Connector(ABC):
         return None
 
     def download(
-        self, document: ResolvedDocument, dest_dir: Path, *, dry_run: bool = False
+        self,
+        document: ResolvedDocument,
+        dest_dir: Path,
+        *,
+        dry_run: bool = False,
+        reuse_existing: bool = False,
     ) -> DownloadResult:
         """Download a resolved document using the best available strategy."""
         strategy = self.pick_strategy(document)
@@ -88,4 +93,6 @@ class Connector(ABC):
                 error="No download strategy supports this document",
             )
         document.download_strategy = strategy.name
-        return strategy.download(document, dest_dir, dry_run=dry_run)
+        return strategy.download(
+            document, dest_dir, dry_run=dry_run, reuse_existing=reuse_existing
+        )

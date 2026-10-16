@@ -40,9 +40,19 @@ class DownloadStrategy(ABC):
         """Actual fetching logic; may raise (the wrapper handles it)."""
 
     def download(
-        self, document: ResolvedDocument, dest_dir: Path, *, dry_run: bool = False
+        self,
+        document: ResolvedDocument,
+        dest_dir: Path,
+        *,
+        dry_run: bool = False,
+        reuse_existing: bool = False,
     ) -> DownloadResult:
-        """Safe entry point used by the pipeline. Never raises."""
+        """Safe entry point used by the pipeline. Never raises.
+
+        ``reuse_existing`` skips the HTTP call when a non-empty file is already
+        on disk. The default stays off so ``collecte.py`` still re-downloads.
+        """
+        self._reuse_existing = reuse_existing
         try:
             return self._download(document, dest_dir, dry_run=dry_run)
         except Exception as exc:  # noqa: BLE001 - strategies must not break pipeline
@@ -82,7 +92,22 @@ class DownloadStrategy(ABC):
                 error=None,
             )
         dest = dest_dir / filename
-        response = self.http.download(url, dest, headers=headers)
+        if (
+            getattr(self, "_reuse_existing", False)
+            and dest.is_file()
+            and dest.stat().st_size > 0
+        ):
+            return DownloadResult(
+                success=True,
+                strategy=self.name,
+                final_url=url,
+                local_path=dest,
+                skipped=True,
+                size_bytes=dest.stat().st_size,
+            )
+        partial = dest.with_name(dest.name + ".part")
+        response = self.http.download(url, partial, headers=headers)
+        partial.replace(dest)
         size = dest.stat().st_size if dest.exists() else None
         return DownloadResult(
             success=True,
