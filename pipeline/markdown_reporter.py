@@ -46,8 +46,12 @@ class MarkdownReporter:
         return write_text(path, self.render(run))
 
     # -- rendering -------------------------------------------------------
-    def render(self, run: CollectionRun) -> str:
-        """Return the full Markdown document as a string."""
+    def render(self, run: CollectionRun, *, include_llm: bool = True) -> str:
+        """Return the full Markdown document as a string.
+
+        ``include_llm=False`` keeps every source pending. The mechanical
+        collecte file is written that way; the analyse file includes results.
+        """
         blocks: list[str] = [
             self._header(run),
             self._metadata(run),
@@ -55,7 +59,9 @@ class MarkdownReporter:
             self._search_params(run),
         ]
         for index, document in enumerate(run.retained, start=1):
-            blocks.append(self._document_section(index, document, run))
+            blocks.append(
+                self._document_section(index, document, run, include_llm=include_llm)
+            )
         blocks.append(self._ignored_section(run))
         blocks.append(self._observations(run))
         blocks.append(self._annexes(run))
@@ -106,14 +112,19 @@ class MarkdownReporter:
         )
 
     def _document_section(
-        self, index: int, doc: CollectedDocument, run: CollectionRun
+        self,
+        index: int,
+        doc: CollectedDocument,
+        run: CollectionRun,
+        *,
+        include_llm: bool = True,
     ) -> str:
         title = doc.candidate.title or f"Document {doc.candidate.document_id or index}"
         parts = [f"## Source {index} — {title}"]
         parts.append(self._identity(doc))
         parts.append(self._relevance(doc, run))
         parts.append(self._excerpts(doc))
-        parts.append(self._llm_ideas(doc))
+        parts.append(self._llm_ideas(doc, include_llm=include_llm))
         parts.append(self._location(doc))
         parts.append(self._doc_metadata(doc))
         parts.append(self._ocr_notes(doc))
@@ -166,9 +177,9 @@ class MarkdownReporter:
             lines.append(f"> … et {doc.match_count - self.max_excerpts} autre(s) extrait(s).")
         return "\n\n".join([lines[0], *lines[1:]])
 
-    def _llm_ideas(self, doc: CollectedDocument) -> str:
+    def _llm_ideas(self, doc: CollectedDocument, *, include_llm: bool = True) -> str:
         llm = doc.llm_extraction
-        if not llm:
+        if not include_llm or not llm:
             return format_pending_llm_section()
         return format_llm_section(llm)
 

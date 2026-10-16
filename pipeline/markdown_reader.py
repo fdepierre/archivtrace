@@ -73,6 +73,8 @@ _STATUS_RE = re.compile(r"^- Status:\s*(.+)$", re.MULTILINE)
 
 _LOCAL_FILE_RE = re.compile(r"^- Local file:\s*(.+)$", re.MULTILINE)
 
+_DOWNLOAD_URL_RE = re.compile(r"^- Download URL:\s*(.+)$", re.MULTILINE)
+
 _SOURCE_URL_RE = re.compile(r"^- Source URL:\s*(.+)$", re.MULTILINE)
 
 _RESOLVED_URL_RE = re.compile(r"^- Resolved URL:\s*(.+)$", re.MULTILINE)
@@ -122,6 +124,8 @@ class ParsedSource:
     status: str | None = None
 
     local_file: Path | None = None
+
+    download_url: str | None = None
 
     source_url: str | None = None
 
@@ -321,6 +325,10 @@ def _extract_sources(text: str) -> list[ParsedSource]:
 
         local_file = Path(local_raw) if local_raw and local_raw != "—" else None
 
+        download_raw = _field(part, _DOWNLOAD_URL_RE)
+
+        download_url = download_raw if download_raw and download_raw != "—" else None
+
         source_url = _best_url(part)
 
         source_type = _field(part, _SOURCE_TYPE_RE)
@@ -358,6 +366,8 @@ def _extract_sources(text: str) -> list[ParsedSource]:
                 status=status,
 
                 local_file=local_file,
+
+                download_url=download_url,
 
                 source_url=source_url,
 

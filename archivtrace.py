@@ -41,6 +41,31 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Retourner sur les sites et ajouter les documents nouveaux.",
+    )
+    parser.add_argument(
+        "--from-scratch",
+        action="store_true",
+        help="Ignorer le cahier existant, retélécharger et ré-analyser.",
+    )
+    parser.add_argument(
+        "--collecte-seule",
+        action="store_true",
+        help="Télécharger sans appeler le modèle.",
+    )
+    parser.add_argument(
+        "--toutes-les-sources",
+        action="store_true",
+        help="Analyser aussi les documents sans match mécanique.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Recherche et résolution, sans téléchargement ni modèle.",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -115,21 +140,32 @@ def main(
         return exit_code
     assert sites is not None
 
-    if args.query:
-        print(
-            "La recherche au fil de l'eau n'est pas encore branchée sur cette commande.",
-            file=sys.stderr,
-        )
-        return 2
-
     cfg = load_config(config_path)
     research_dir = args.research_dir or cfg.output_dir
-    text = render_guide(
+    if not args.query:
+        text = render_guide(
+            sites=sites,
+            summaries=notebook_summaries(research_dir),
+        )
+        print(text, end="")
+        return 0
+
+    from dataclasses import replace
+
+    from pipeline.archivtrace_session import run_archivtrace
+
+    run_cfg = replace(cfg, output_dir=research_dir)
+    return run_archivtrace(
+        run_cfg,
+        query=args.query,
         sites=sites,
-        summaries=notebook_summaries(research_dir),
+        refresh=args.refresh,
+        from_scratch=args.from_scratch,
+        collecte_seule=args.collecte_seule,
+        only_matches=not args.toutes_les_sources,
+        dry_run=args.dry_run,
+        research_dir=research_dir,
     )
-    print(text, end="")
-    return 0
 
 
 if __name__ == "__main__":
