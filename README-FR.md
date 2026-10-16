@@ -199,6 +199,23 @@ Test sans téléchargement réel de PDF (`--dry-run`).
 
 ---
 
+### Au quotidien — `archivtrace.py`
+
+`collecte.py`, `analyse.py` et `synthesize.py` restent les outils précis.
+La commande du chercheur enchaîne téléchargement et analyse, et reprend le cahier déjà commencé :
+
+```bash
+python archivtrace.py
+python archivtrace.py --query "valmontagne"
+python archivtrace.py --sites tous
+python archivtrace.py --query "valmontagne" --refresh
+python archivtrace.py --query "valmontagne" --from-scratch
+```
+
+Sans argument, elle affiche le workflow, les sites enregistrés dans `config.json` (`sites`) et la prochaine commande. Le premier lancement demande ces sites : Entrée enregistre Wikipédia, `tous` enregistre les connecteurs en production ce jour-là. Une relance ne retourne pas sur les archives : elle finit les fichiers manquants et les analyses en attente. `--refresh` cherche des documents nouveaux. `--from-scratch` recommence. `--collecte-seule` n'appelle pas le modèle.
+
+`collecte.py` sans `--connector` utilise maintenant Wikipédia. Nommez le site quand vous en voulez un autre (`--connector numelyo`).
+
 ### Première utilisation — le cycle en 4 commandes
 
 À **chaque nouvelle ouverture** de terminal, réactivez d'abord l'environnement :

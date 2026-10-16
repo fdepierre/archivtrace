@@ -59,6 +59,12 @@ Before running or debugging CLI commands, prefer this file (`AGENTS.md`) and
 
 ## CLI vs config (UX)
 
+Researcher entry point: `archivtrace.py` (home screen, `config.json` key `sites`,
+collect+analyse overlap, resume of the latest notebook). Precise tools stay
+`collecte.py`, `analyse.py`, `synthesize.py`. Default single connector is
+Wikipedia (`config.DEFAULT_CONNECTOR`); `tous` / `--connectors all` is an
+explicit choice of production connectors.
+
 Daily workflow uses short intention flags (`--query`, `--input`, `--connector`, `--mode`).
 Policies live in `config.json`:
 
@@ -77,5 +83,6 @@ Callable API: `pipeline.run_api.run_collect` / `run_analyse` / `run_synthesize` 
 HTTP layer deferred until a front is needed.
 OCR optional: `pip install -r requirements-ocr.txt`.
 Ollama client: vendored at `vendor/ollama_shared`.
-Wikipedia: `--connector wikipedia` (MediaWiki API; `wikipedia_lang` default `fr`).
+Wikipedia: default connector when none is named (`--connector wikipedia` still
+explicit). MediaWiki API; `wikipedia_lang` default `fr`.
 

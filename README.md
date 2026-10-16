@@ -199,6 +199,23 @@ Test without actually downloading PDFs (`--dry-run`).
 
 ---
 
+### Day to day — `archivtrace.py`
+
+`collecte.py`, `analyse.py` and `synthesize.py` stay available as precise tools.
+The researcher command chains download and analysis, and continues an existing notebook:
+
+```bash
+python archivtrace.py
+python archivtrace.py --query "valmontagne"
+python archivtrace.py --sites tous
+python archivtrace.py --query "valmontagne" --refresh
+python archivtrace.py --query "valmontagne" --from-scratch
+```
+
+With no arguments it prints the workflow, the sites saved in `config.json` (`sites`), and the next command. The first launch asks for those sites; Enter stores Wikipedia, `tous` stores every production connector as of that day. A later run does not search the archives again: it finishes missing files and pending analyses. `--refresh` looks for new documents. `--from-scratch` starts over. `--collecte-seule` skips the language model.
+
+`collecte.py` without `--connector` now uses Wikipedia. Name a site when you want another one (`--connector numelyo`).
+
 ### First use — the 4-command cycle
 
 **Every time** you open a new terminal, reactivate the environment first:
