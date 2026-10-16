@@ -104,7 +104,7 @@
 
   "llm_log_max_bytes": 5000000,
 
-  "llm_log_backup_count": 10
+  "llm_log_backup_count": 10,
 
 
 
@@ -114,7 +114,7 @@
 
   // "download_dir": "work/downloads"
 
-  // "enable_ocr": false
+  "enable_ocr": true
 
   // "ocr_lang": "fra"
 
@@ -132,6 +132,6 @@
     "nli_llm": false,
     // LLM fallback when heuristic class is non_determine (extra cost)
     "classify_sources": false
-  }
-
+  },
+  "sites": ["wikipedia", "archives_map", "archives_rhone", "gallica", "numelyo"]
 }
