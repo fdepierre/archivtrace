@@ -31,115 +31,114 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="analyse",
         description=(
-            "Analyse sémantique document par document (Ollama) "
-            "à partir d'un Markdown de collecte."
+            "Per-document semantic analysis (Ollama) from a collection Markdown file."
         ),
     )
 
-    intention = parser.add_argument_group('Intention')
-    advanced = parser.add_argument_group('Avance (preferer config.json)')
+    intention = parser.add_argument_group("Intention")
+    advanced = parser.add_argument_group("Advanced (prefer config.json)")
     intention.add_argument(
         "--input",
         type=Path,
         required=True,
-        help="Fichier Markdown de collecte (ex. work/research/2026-06-28_valmontagne_collecte.md).",
+        help="Collection Markdown file (e.g. work/research/2026-06-28_valmontagne_collecte.md).",
     )
     intention.add_argument(
         "--output",
         type=Path,
         default=None,
-        help="Fichier de sortie (défaut: collecte_analyse_<modèle>.md à côté de --input).",
+        help="Output file (default: collecte_analyse_<model>.md next to --input).",
     )
     intention.add_argument(
         "--in-place",
         action="store_true",
-        help="Enrichir --input directement (ancien comportement, écrase la collecte).",
+        help="Enrich --input itself (overwrites the collection file).",
     )
     advanced.add_argument(
         "--download-dir",
         type=Path,
         default=None,
-        help=f"Répertoire des PDF téléchargés (défaut: {DEFAULT_DOWNLOAD_DIR}).",
+        help=f"Directory of downloaded PDFs (default: {DEFAULT_DOWNLOAD_DIR}).",
     )
     intention.add_argument(
         "--only-matches",
         action="store_true",
-        help="Analyser uniquement les sources avec au moins un match mécanique.",
+        help="Analyse only sources that have at least one mechanical match.",
     )
     intention.add_argument(
         "--skip-existing",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Ignorer les sources déjà analysées (défaut: activé).",
+        help="Skip sources that are already analysed (default: on).",
     )
     intention.add_argument(
         "--force",
         action="store_true",
         help=(
-            "Tout ré-analyser : recopie la collecte vers le fichier de sortie "
-            "(si distinct) et ignore --skip-existing."
+            "Re-analyse everything: copy the collection onto the output file "
+            "(when they differ) and ignore --skip-existing."
         ),
     )
     advanced.add_argument(
         "--llm",
         choices=["ollama", "openai", "openrouter", "perplexity", "none"],
         default=None,
-        help="Fournisseur LLM (défaut: config.json llm_provider ou ollama).",
+        help="LLM provider (default: config.json llm_provider, or ollama).",
     )
     advanced.add_argument(
         "--ollama-url",
         default=None,
-        help=f"URL Ollama / override base (défaut: config.json ou {DEFAULT_OLLAMA_HOST}).",
+        help=f"Ollama URL / base override (default: config.json or {DEFAULT_OLLAMA_HOST}).",
     )
     advanced.add_argument(
         "--llm-base-url",
         default=None,
-        help="Base URL API (OpenAI-compatible) — override du preset fournisseur.",
+        help="OpenAI-compatible API base URL (overrides the provider preset).",
     )
     advanced.add_argument(
         "--llm-api-key",
         default=None,
-        help="Clé API (sinon OPENAI_API_KEY / OPENROUTER_API_KEY / PERPLEXITY_API_KEY / LLM_API_KEY).",
+        help="API key (else OPENAI_API_KEY / OPENROUTER_API_KEY / PERPLEXITY_API_KEY / LLM_API_KEY).",
     )
     advanced.add_argument(
         "--model",
         default=None,
         help=(
-            "Modèle LLM pour l'extraction (surcharge llm.models.extraction / "
-            f"défaut {DEFAULT_OLLAMA_MODEL}). Alias de --model-extraction."
+            "LLM model for extraction (overrides llm.models.extraction / "
+            f"default {DEFAULT_OLLAMA_MODEL}). Alias of --model-extraction."
         ),
     )
     advanced.add_argument(
         "--model-extraction",
         default=None,
-        help="Modèle Ollama pour l'extraction d'affirmations sourcées "
-        "(ex. gemma4:26b). Surchargeable aussi via LLM_MODEL_EXTRACTION.",
+        help="Ollama model for grounded claim extraction "
+        "(e.g. gemma4:26b). Also overridable via LLM_MODEL_EXTRACTION.",
     )
     advanced.add_argument(
         "--timeout",
         type=float,
         default=None,
-        help="Timeout de génération LLM (s) — défaut: config.json ou Config.",
+        help="LLM generation timeout (seconds) — default: config.json or Config.",
     )
     advanced.add_argument(
         "--max-chars",
         type=int,
         default=None,
-        help="Caractères max envoyés au LLM par document (défaut: config.json ou Config).",
+        help="Max characters sent to the LLM per document (default: config.json or Config).",
     )
     advanced.add_argument(
         "--num-predict",
         type=int,
         default=None,
-        help="Tokens max en sortie Ollama (num_predict) — défaut: config.json ou Config.",
+        help="Max Ollama output tokens (num_predict) — default: config.json or Config.",
     )
     advanced.add_argument(
         "--enable-ocr",
         action=argparse.BooleanOptionalAction,
         default=None,
         help=(
-            "Ré-extraire le texte avec PaddleOCR si la couche native est insuffisante. "
-            "--no-enable-ocr désactive malgré config.json."
+            "Re-extract text with PaddleOCR when the native layer is too thin. "
+            "--no-enable-ocr turns it off despite config.json."
         ),
     )
     advanced.add_argument(
@@ -147,8 +146,8 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=None,
         help=(
-            "Si le texte natif est vide, retenter automatiquement avec PaddleOCR. "
-            "--no-auto-ocr désactive malgré config.json."
+            "When native text is empty, retry automatically with PaddleOCR. "
+            "--no-auto-ocr turns it off despite config.json."
         ),
     )
     advanced.add_argument(
@@ -156,14 +155,14 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=None,
         help=(
-            "Seconde passe descriptive si la passe stricte ne confirme aucune "
-            "affirmation. --no-two-pass-extraction désactive malgré config.json."
+            "Descriptive second pass when the strict pass confirms no claim. "
+            "--no-two-pass-extraction turns it off despite config.json."
         ),
     )
     advanced.add_argument(
         "--ocr-lang",
         default=None,
-        help="Langue OCR (fra→fr pour PaddleOCR, défaut: fra).",
+        help="OCR language (fra maps to Paddle fr; default: fra).",
     )
     intention.add_argument("--verbose", action="store_true")
     return parser
@@ -179,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if not args.input.exists():
-        logger.error("Fichier introuvable: %s", args.input)
+        logger.error("File not found: %s", args.input)
         return 2
 
     extraction_model = args.model_extraction or args.model

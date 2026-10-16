@@ -61,8 +61,8 @@ def run_archivtrace(
         extractor = _build_extractor(cfg)
         llm_missing = extractor is None
         if llm_missing:
-            logger.error("LLM indisponible : la collecte continue, l'analyse est reportée.")
-            progress("Analyse indisponible")
+            logger.error("LLM unavailable: collection continues, analysis is postponed.")
+            progress("Analysis unavailable")
 
     lane = AnalysisLane(extractor) if extractor is not None and not collecte_seule and not dry_run else None
     exit_code = 1 if llm_missing else 0
@@ -122,7 +122,7 @@ def _run_site(
     existing = None if from_scratch else _latest_notebook(output_dir, query, site)
     http = HttpClient(headers=cfg.headers(), timeout=cfg.timeout, delay=cfg.delay)
     if existing is not None and not refresh:
-        progress(f"Reprise {site}")
+        progress(f"Resume {site}")
         _resume(
             cfg,
             existing=existing,
@@ -161,9 +161,9 @@ def _run_site(
             prepare_analyse_output(existing, analyse_path, model=model, force=False)
         parsed = read_collection(analyse_path)
         next_index = len(parsed.sources) + 1
-        progress(f"Recherche {site} (nouveaux documents)")
+        progress(f"Search {site} (new documents)")
     else:
-        progress(f"Recherche {site}")
+        progress(f"Search {site}")
 
     lock = threading.Lock()
     added = 0
@@ -178,7 +178,7 @@ def _run_site(
         if doc_id and doc_id in known_ids:
             continue
         title = document.candidate.title or doc_id or "document"
-        progress(f"Téléchargement {title}")
+        progress(f"Download {title}")
         if refresh and existing is not None:
             section = reporter._document_section(
                 next_index + added,
@@ -223,7 +223,7 @@ def _submit_in_memory(
             document.llm_extraction = extraction
             flush()
 
-    progress(f"Analyse {document.candidate.title}")
+    progress(f"Analysis {document.candidate.title}")
     assert lane is not None
     lane.submit(_job(document, query, on_result))
 
@@ -247,7 +247,7 @@ def _submit(
             patched = patch_collection_markdown(text, {index: extraction})
             analyse_path.write_text(patched, encoding="utf-8")
 
-    progress(f"Analyse {document.candidate.title}")
+    progress(f"Analysis {document.candidate.title}")
     assert lane is not None
     lane.submit(_job(document, query, on_result))
 
@@ -310,7 +310,7 @@ def _resume(
     for source in parsed.sources:
         local = _resolved_local(source)
         if local is None or not _file_ready(local):
-            progress(f"Téléchargement {source.title}")
+            progress(f"Download {source.title}")
             _ensure_local_file(source, http, cfg.download_dir)
             local = _resolved_local(source)
         if collecte_seule or dry_run or lane is None or source.llm_analyzed:
@@ -332,7 +332,7 @@ def _resume(
                     encoding="utf-8",
                 )
 
-        progress(f"Analyse {source.title}")
+        progress(f"Analysis {source.title}")
         lane.submit(
             AnalysisJob(
                 query=parsed.query,

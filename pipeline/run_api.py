@@ -108,21 +108,21 @@ def _collect_query_connector(
     try:
         conn = build_connector(connector, http, cfg)
     except KeyError:
-        logger.exception("Connecteur inconnu: %s", connector)
+        logger.exception("Unknown connector: %s", connector)
         return query, connector, None, False
 
     collector = Collector(conn, cfg)
     reporter = MarkdownReporter(max_excerpts=cfg.max_excerpts)
-    logger.info("=== Collecte: %r via %s ===", query, connector)
+    logger.info("=== Collect: %r via %s ===", query, connector)
     try:
         collection = collector.collect(query)
     except Exception:  # noqa: BLE001 - one pair must not abort the batch
-        logger.exception("Échec inattendu pour %r via %s", query, connector)
+        logger.exception("Unexpected failure for %r via %s", query, connector)
         return query, connector, None, False
 
     path = reporter.write(collection, cfg.output_dir)
     logger.info(
-        "Markdown écrit: %s (%d source(s), %d matches)",
+        "Markdown written: %s (%d source(s), %d matches)",
         path,
         len(collection.retained),
         collection.documents_with_matches,
@@ -147,7 +147,7 @@ def run_collect(
     """
     cleaned = [q.strip() for q in queries if q and q.strip()]
     if not cleaned:
-        msg = "Aucune requête à traiter."
+        msg = "No query to process."
         logger.error(msg)
         return RunResult(exit_code=2, errors=(msg,))
 
@@ -172,7 +172,7 @@ def run_collect(
             written.append(path)
         if not ok:
             exit_code = 1
-            errors.append(f"Échec collecte: {query!r} via {name}")
+            errors.append(f"Collection failed: {query!r} via {name}")
         return RunResult(
             exit_code=exit_code,
             paths=tuple(written),
@@ -186,7 +186,7 @@ def run_collect(
         )
 
     logger.info(
-        "Collecte parallèle: %d connecteur(s), %d requête(s) → %d tâche(s) "
+        "Parallel collection: %d connector(s), %d query(ies) → %d task(s) "
         "(max_workers=%d)",
         len(connector_names),
         len(cleaned),
@@ -203,15 +203,15 @@ def run_collect(
             try:
                 _query, _name, path, ok = future.result()
             except Exception as exc:  # noqa: BLE001
-                logger.exception("Échec inattendu pour %r via %s", query, name)
+                logger.exception("Unexpected failure for %r via %s", query, name)
                 exit_code = 1
-                errors.append(f"Échec inattendu: {query!r} via {name}: {exc}")
+                errors.append(f"Unexpected failure: {query!r} via {name}: {exc}")
                 continue
             if path is not None:
                 written.append(path)
             if not ok:
                 exit_code = 1
-                errors.append(f"Échec collecte: {query!r} via {name}")
+                errors.append(f"Collection failed: {query!r} via {name}")
 
     written.sort(key=lambda p: p.name)
     return RunResult(
@@ -236,15 +236,15 @@ def load_synthesis_collection(
 ) -> Any | None:
     """Load one collecte file or merge multi-site files for query."""
     if query and input_path:
-        logger.error("Utiliser --query ou --input, pas les deux.")
+        logger.error("Use --query or --input, not both.")
         return None
     if not query and not input_path:
-        logger.error("Indiquer --query MOTCLE ou --input fichier.md")
+        logger.error("Provide --query KEYWORD or --input file.md")
         return None
 
     if input_path is not None:
         if not input_path.exists():
-            logger.error("Fichier introuvable: %s", input_path)
+            logger.error("File not found: %s", input_path)
             return None
         return read_collection(input_path)
 
@@ -252,13 +252,13 @@ def load_synthesis_collection(
     paths = discover_corpus_files(base, query or "")
     if not paths:
         logger.error(
-            "Aucun fichier research trouve pour %r dans %s",
+            "No research file found for %r in %s",
             query,
             base,
         )
         return None
     logger.info(
-        "Corpus multi-sites (%d fichier(s)):\n  %s",
+        "Multi-site corpus (%d file(s)):\n  %s",
         len(paths),
         "\n  ".join(str(p) for p in paths),
     )
@@ -291,7 +291,7 @@ def run_synthesize(
     if collection is None:
         return RunResult(
             exit_code=2,
-            errors=("Impossible de charger le corpus de synthèse.",),
+            errors=("Could not load the synthesis corpus.",),
         )
 
     out_dir = output_dir or DEFAULT_SYNTHESIS_DIR
@@ -304,8 +304,8 @@ def run_synthesize(
     provider = (llm_provider or cfg.llm_provider or "ollama").strip().lower()
 
     logger.info(
-        "Collecte lue: query=%r, connecteur(s)=%s, %d source(s), "
-        "%d extraits, %d analyses LLM",
+        "Collection read: query=%r, connector(s)=%s, %d source(s), "
+        "%d excerpts, %d LLM analyses",
         collection.query,
         collection.connector,
         len(collection.sources),
@@ -340,7 +340,7 @@ def run_synthesize(
             )
         else:
             logger.warning(
-                "LLM indisponible (provider=%s) — repli template",
+                "LLM unavailable (provider=%s) — falling back to the template",
                 provider,
             )
 
@@ -474,7 +474,7 @@ def run_reverify(
     from utils.strings import slugify
 
     if not synthesis_path.exists():
-        msg = f"Synthèse introuvable: {synthesis_path}"
+        msg = f"Synthesis not found: {synthesis_path}"
         logger.error(msg)
         return RunResult(exit_code=2, errors=(msg,))
 
@@ -484,7 +484,7 @@ def run_reverify(
     if collection is None:
         return RunResult(
             exit_code=2,
-            errors=("Impossible de charger le corpus pour re-vérification.",),
+            errors=("Could not load the corpus for re-verification.",),
         )
 
     promotion_mode = resolve_facts_mode(
@@ -544,7 +544,7 @@ def run_reverify(
         plan_article=output.plan_article,
     )
     logger.info(
-        "Re-vérification: %d corroboré(s), %d documenté(s), %d hypothèse(s) depuis %s",
+        "Re-verification: %d corroborated, %d documented, %d hypothesis(es) from %s",
         len(output.faits_etablis),
         len(output.faits_documentes),
         len(output.points_a_verifier),
@@ -568,7 +568,7 @@ def run_reverify(
             llm = client
             logger.info("LLM reverify model=%s", client.model)
         else:
-            logger.warning("LLM indisponible — NLI déterministe uniquement")
+            logger.warning("LLM unavailable — deterministic NLI only")
 
     report = run_verification(
         output,
@@ -624,7 +624,7 @@ def run_reverify(
     path = out_dir / f"{date}_{slugify(result.query)}_synthese_verified.md"
     write_text(path, synthesizer.render(result))
     logger.info(
-        "Re-vérification écrite: %s (%d fait(s) retenus, %d NLI, %d CoVe)",
+        "Re-verification written: %s (%d fact(s) kept, %d NLI, %d CoVe)",
         path,
         len(report.output.faits_etablis),
         len(report.nli_results),
@@ -690,7 +690,7 @@ def run_analyse(
         logger.error("%s", exc)
         return RunResult(exit_code=2)
     if client is None:
-        msg = "llm_provider=none : l'analyse documentaire nécessite un LLM."
+        msg = "llm_provider=none: documentary analysis requires an LLM."
         logger.error(msg)
         return RunResult(exit_code=2, errors=(msg,))
 
@@ -707,7 +707,7 @@ def run_analyse(
     )
     if not client.is_available():
         logger.error(
-            "LLM indisponible (provider=%s model=%s) — vérifier le service / la clé API",
+            "LLM unavailable (provider=%s model=%s) — check the service or the API key",
             client.provider,
             model,
         )
@@ -722,8 +722,8 @@ def run_analyse(
         return RunResult(exit_code=2, errors=(missing_pdf_backend_message(),))
     if not needs_pdf and not pdf_backend_available() and not ocr_available():
         msg = (
-            "Aucun backend PDF ni OCR disponible. Installer pymupdf/pdfplumber/pypdf "
-            "et/ou paddleocr (requirements-ocr.txt)."
+            "No PDF backend and no OCR available. Install pymupdf/pdfplumber/pypdf "
+            "and/or paddleocr (requirements-ocr.txt)."
         )
         logger.error(msg)
         return RunResult(exit_code=2, errors=(msg,))
@@ -732,11 +732,11 @@ def run_analyse(
         logger.error(missing_ocr_message())
         return RunResult(exit_code=2, errors=(missing_ocr_message(),))
     if cfg.enable_ocr:
-        logger.info("OCR activé (lang=%s)", cfg.ocr_lang)
+        logger.info("OCR enabled (lang=%s)", cfg.ocr_lang)
     elif cfg.auto_ocr:
-        logger.info("Auto-OCR activé (lang=%s)", cfg.ocr_lang)
+        logger.info("Auto-OCR enabled (lang=%s)", cfg.ocr_lang)
     if cfg.two_pass_extraction:
-        logger.info("Two-pass extraction activé (passe descriptive si besoin)")
+        logger.info("Two-pass extraction enabled (descriptive pass when needed)")
 
     in_place = in_place
     if in_place:
@@ -748,22 +748,22 @@ def run_analyse(
         input_path, output_path, model=model, force=force and not in_place
     )
     if work_path != input_path:
-        logger.info("Collecte source: %s", input_path)
-        logger.info("Fichier analyse: %s", work_path)
+        logger.info("Source collection: %s", input_path)
+        logger.info("Analysis file: %s", work_path)
 
     collection = load_collection(work_path)
     pending = sum(1 for s in collection.sources if s.llm_status == "pending")
     failed = sum(1 for s in collection.sources if s.llm_status == "failed")
     done = sum(1 for s in collection.sources if s.llm_analyzed)
     logger.info(
-        "État LLM: %d terminée(s), %d échec(s) à réessayer, %d en attente",
+        "LLM state: %d done, %d failure(s) to retry, %d pending",
         done,
         failed,
         pending,
     )
     already_done = done
     logger.info(
-        "Collecte lue: query=%r, %d source(s), %d déjà analysée(s)",
+        "Collection read: query=%r, %d source(s), %d already analysed",
         collection.query,
         len(collection.sources),
         already_done,
@@ -790,7 +790,7 @@ def run_analyse(
 
     analyzer.write(patched, work_path)
     logger.info(
-        "Markdown enrichi: %s (%d analysée(s), %d ignorée(s), %d échec(s))",
+        "Markdown enriched: %s (%d analysed, %d skipped, %d failed)",
         work_path,
         stats.sources_analyzed,
         stats.sources_skipped,
@@ -800,7 +800,7 @@ def run_analyse(
         logger.info("  %s", message)
     for model_id, vstats in VALIDATION_STATS.snapshot().items():
         logger.info(
-            "Validation JSON modèle=%s: ok=%s fail=%s rate=%.1f%%",
+            "JSON validation model=%s: ok=%s fail=%s rate=%.1f%%",
             model_id,
             vstats["ok"],
             vstats["fail"],
@@ -812,9 +812,9 @@ def run_analyse(
             report_path,
             analyse_path=work_path,
         )
-        logger.info("Rapport qualité: %s", report_path)
+        logger.info("Quality report: %s", report_path)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Impossible d'écrire le rapport qualité: %s", exc)
+        logger.warning("Could not write the quality report: %s", exc)
         report_path = None
     analyse_stats: dict[str, int | str | float | bool] = {
         "analyzed": stats.sources_analyzed,
@@ -828,7 +828,7 @@ def run_analyse(
             exit_code=2,
             paths=(work_path,),
             quality_report_path=report_path,
-            errors=("Analyse: toutes les sources ont échoué.",),
+            errors=("Analysis: every source failed.",),
             stats=analyse_stats,
         )
     return RunResult(

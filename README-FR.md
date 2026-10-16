@@ -207,12 +207,12 @@ La commande du chercheur enchaîne téléchargement et analyse, et reprend le ca
 ```bash
 python archivtrace.py
 python archivtrace.py --query "valmontagne"
-python archivtrace.py --sites tous
+python archivtrace.py --sites all
 python archivtrace.py --query "valmontagne" --refresh
 python archivtrace.py --query "valmontagne" --from-scratch
 ```
 
-Sans argument, elle affiche le workflow, les sites enregistrés dans `config.json` (`sites`) et la prochaine commande. Le premier lancement demande ces sites : Entrée enregistre Wikipédia, `tous` enregistre les connecteurs en production ce jour-là. Une relance ne retourne pas sur les archives : elle finit les fichiers manquants et les analyses en attente. `--refresh` cherche des documents nouveaux. `--from-scratch` recommence. `--collecte-seule` n'appelle pas le modèle.
+Sans argument, elle affiche le workflow, les sites enregistrés dans `config.json` (`sites`) et la prochaine commande. Le premier lancement demande ces sites : Entrée enregistre Wikipédia, `all` enregistre les connecteurs en production ce jour-là. Une relance ne retourne pas sur les archives : elle finit les fichiers manquants et les analyses en attente. `--refresh` cherche des documents nouveaux. `--from-scratch` recommence. `--collect-only` n'appelle pas le modèle.
 
 `collecte.py` sans `--connector` utilise maintenant Wikipédia. Nommez le site quand vous en voulez un autre (`--connector numelyo`).
 
@@ -240,7 +240,7 @@ python analyse.py --input work/research/2026-06-28_valmontagne_numelyo_collecte.
 python synthesize.py --query "valmontagne"
 
 # 4. Dossier pour rédiger votre texte
-python synthesize.py --query "valmontagne" --mode contexte
+python synthesize.py --query "valmontagne" --mode context
 ```
 
 Les résultats sont dans les dossiers **`work/research/`** et **`work/synthesys/`**. Ouvrez les fichiers `.md` avec votre éditeur préféré.
@@ -334,7 +334,7 @@ Les résultats sont dans les dossiers **`work/research/`** et **`work/synthesys/
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  ÉTAPE 4 — CONTEXTE DE RÉDACTION            synthesize.py --mode contexte│
+│  ÉTAPE 4 — CONTEXTE DE RÉDACTION            synthesize.py --mode context│
 │                                                                         │
 │  Même famille de modèle que la synthèse ──► dossier de rédaction        │
 │                    │                                                    │
@@ -597,8 +597,8 @@ Site : [archives.rhone.fr](https://archives.rhone.fr) — exemple de recherche :
 - Pagination : `&page=N` (base 1)
 
 ```bash
-python collecte.py --query "sujet" --connector archives_rhone --max-results 20
-python collecte.py --query "sujet" --connector archives_rhone --dry-run --max-results 5
+python collecte.py --query "topic" --connector archives_rhone --max-results 20
+python collecte.py --query "topic" --connector archives_rhone --dry-run --max-results 5
 ```
 
 ### Médiathèque du patrimoine / Archiv'MH (`archives_map`)
@@ -642,7 +642,7 @@ Site : [fr.wikipedia.org](https://fr.wikipedia.org) (langue configurable).
 - Langue : `wikipedia_lang` dans `config.json` ou `--wikipedia-lang en`
 
 ```bash
-python collecte.py --query "piste de ski" --connector wikipedia --max-results 5
+python collecte.py --query "ski slope" --connector wikipedia --max-results 5
 python collecte.py --query "ski jumping" --connector wikipedia --wikipedia-lang en --max-results 5
 ```
 
@@ -653,7 +653,7 @@ Fixture de test : `tests/fixtures/wikipedia_search_sample.json`.
 Connecteur générique pour sites institutionnels avec recherche GET + liste de liens HTML.
 
 ```bash
-python collecte.py --query "sujet" --connector catalog_html \
+python collecte.py --query "topic" --connector catalog_html \
   --catalog-search-url "https://archives.example.org/search?q={query}" \
   --catalog-root "archives.example.org"
 ```
@@ -711,7 +711,7 @@ Image : PaddleOCR direct (API predict() 3.x, repli ocr() 2.x)
 pip install -r requirements-ocr.txt
 
 # Collecte ou analyse avec OCR
-python collecte.py --query "sujet" --connector numelyo --enable-ocr --ocr-lang fra
+python collecte.py --query "topic" --connector numelyo --enable-ocr --ocr-lang fra
 python analyse.py --input work/research/…_collecte.md --only-matches --enable-ocr --ocr-lang fra
 ```
 
@@ -796,7 +796,7 @@ Modèle de tâche par défaut : **`qwen3.5`** (`llm.models.synthesis`) — long 
 
 Relit un Markdown de collecte (`markdown_reader.py`), filtre les affirmations ancrées (`grounded_claims.py`), et appelle la gateway avec **`task="synthesis"`** pour agréger **tout le corpus**.
 
-### Mode `synthese` (défaut)
+### Mode `synthesis` (défaut)
 
 Produit une **note de recherche** à partir des **seules affirmations confirmées et
 ancrées** (`statut=confirme_par_le_document`, citation non vide, source utilisable
@@ -842,7 +842,7 @@ Régression :
 pytest tests/test_synthesis_grounding.py tests/test_historical_validation.py -q
 ```
 
-### Mode `contexte`
+### Mode `context`
 
 Produit un **dossier de rédaction** pour alimenter une LLM (ou pour écrire vous-même) :
 
@@ -864,7 +864,7 @@ Fichier : `work/synthesys/{date}_{sujet}_contexte.md`
 |---|---|---|
 | `{date}_{sujet}_{connector}_collecte.md` | `collecte.py` → `work/research/` | Trace complète **par site** : métadonnées, chaque source, extraits, idées LLM |
 | `{date}_{sujet}_synthese.md` | `synthesize.py --query` → `work/synthesys/` | Synthèse multi-sites pour le mot-clé (URL conservées) |
-| `{date}_{sujet}_contexte.md` | `synthesize.py --mode contexte` → `work/synthesys/` | Dossier structuré pour rédaction d'article |
+| `{date}_{sujet}_contexte.md` | `synthesize.py --mode context` → `work/synthesys/` | Dossier structuré pour rédaction d'article |
 
 ### Structure d'un Markdown de collecte (stable)
 
@@ -1084,7 +1084,7 @@ python collecte.py --query "valmontagne" --connector numelyo --dry-run
 python collecte.py --queries-file queries.txt --connector numelyo
 
 # OCR PaddleOCR pour documents scannés / images
-python collecte.py --query "sujet" --connector numelyo --enable-ocr --ocr-lang fra
+python collecte.py --query "topic" --connector numelyo --enable-ocr --ocr-lang fra
 ```
 
 | Argument | Défaut | Description |
@@ -1147,7 +1147,7 @@ python synthesize.py --query "valmontagne"
 python synthesize.py --input work/research/2026-06-28_valmontagne_numelyo_collecte.md
 
 # Contexte pour rédiger un texte (article, note, billet…)
-python synthesize.py --query "valmontagne" --mode contexte
+python synthesize.py --query "valmontagne" --mode context
 
 # Modèle de synthèse explicite
 python synthesize.py --query "valmontagne" --model-synthesis qwen3.5
@@ -1162,7 +1162,7 @@ python synthesize.py --query "valmontagne" --llm none
 | `--input` | — | Markdown de collecte unique (alternative à `--query`) |
 | `--research-dir` | `work/research` | Dossier scanné avec `--query` |
 | `--output-dir` | `work/synthesys` | Dossier de sortie |
-| `--mode` | `synthese` | `synthese` ou `contexte` |
+| `--mode` | `synthesis` | `synthesis` ou `context` (les anciens noms `synthese` et `contexte` fonctionnent encore). Les fichiers restent `*_synthese.md` et `*_contexte.md`. |
 | `--llm` | config `llm_provider` | `ollama` \| `openai` \| `openrouter` \| `perplexity` \| `none` |
 | `--model-synthesis` | `llm.models.synthesis` | Modèle pour la synthèse longue |
 | `--model` | idem `--model-synthesis` | Alias du modèle de synthèse |
@@ -1277,12 +1277,12 @@ Mettre à jour ce snapshot après un changement significatif du pipeline.
 
 ## Ajouter une nouvelle source
 
-1. **Créer** le package `connectors/ma_source/` avec `connector.py` (et optionnellement `parsing.py`) :
+1. **Créer** le package `connectors/my_source/` avec `connector.py` (et optionnellement `parsing.py`) :
 
 ```python
-# connectors/ma_source/connector.py
-class MaSourceConnector(Connector):
-    name = "ma_source"
+# connectors/my_source/connector.py
+class MySourceConnector(Connector):
+    name = "my_source"
     root_source = "archives.example.org"
 
     def build_search_url(self, query: str) -> str: ...
@@ -1292,9 +1292,9 @@ class MaSourceConnector(Connector):
 ```
 
 ```python
-# connectors/ma_source/__init__.py
-from connectors.ma_source.connector import MaSourceConnector
-__all__ = ["MaSourceConnector"]
+# connectors/my_source/__init__.py
+from connectors.my_source.connector import MySourceConnector
+__all__ = ["MySourceConnector"]
 ```
 
 2. **(Optionnel)** Ajouter une stratégie dans `strategies/` si le téléchargement diffère des cas existants.
@@ -1304,7 +1304,7 @@ __all__ = ["MaSourceConnector"]
 ```python
 REGISTRY = {
     NumelyoConnector.name: NumelyoConnector,
-    MaSourceConnector.name: MaSourceConnector,
+    MySourceConnector.name: MySourceConnector,
 }
 ```
 
@@ -1330,7 +1330,7 @@ python analyse.py --input work/research/2026-06-28_valmontagne_numelyo_collecte.
 python synthesize.py --query "valmontagne"
 
 # 4. Dossier de contexte pour rédiger votre texte
-python synthesize.py --query "valmontagne" --mode contexte
+python synthesize.py --query "valmontagne" --mode context
 ```
 
 Résultat dans `work/research/` / `work/synthesys/` :

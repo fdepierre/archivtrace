@@ -7,7 +7,7 @@ from typing import TextIO
 
 
 class ProgressBoard:
-    """Show recherche, téléchargement, analyse and synthèse side by side.
+    """Show search, download, analysis and synthesis side by side.
 
     When stdout is not a terminal, each event is printed as one line so logs
     and tests stay readable. The live panel is optional (``rich``).
@@ -29,7 +29,7 @@ class ProgressBoard:
         self.recherche = "—"
         self.telechargement = "—"
         self.analyse = "—"
-        self.synthese = "pas encore"
+        self.synthese = "not yet"
         self._live: object | None = None
 
     def __enter__(self) -> "ProgressBoard":
@@ -57,12 +57,12 @@ class ProgressBoard:
     def update(self, line: str) -> None:
         """Record one pipeline event and refresh the board."""
         self.events.append(line)
-        if line.startswith("Reprise") or line.startswith("Recherche"):
+        if line.startswith("Resume") or line.startswith("Search"):
             self.recherche = line
-        elif line.startswith("Téléchargement"):
-            self.telechargement = line.removeprefix("Téléchargement ").strip() or "—"
-        elif line.startswith("Analyse"):
-            self.analyse = line.removeprefix("Analyse ").strip() or "—"
+        elif line.startswith("Download"):
+            self.telechargement = line.removeprefix("Download ").strip() or "—"
+        elif line.startswith("Analysis"):
+            self.analyse = line.removeprefix("Analysis ").strip() or "—"
         rendered = self.render()
         live = self._live
         if live is not None:
@@ -77,7 +77,7 @@ class ProgressBoard:
             [
                 f"{self.query} · {sites}",
                 "",
-                f"{'Recherche':<22} {'Téléchargement':<28} {'Analyse':<28} Synthèse",
+                f"{'Search':<22} {'Download':<28} {'Analysis':<28} Synthesis",
                 f"{self.recherche:<22} {self.telechargement:<28} {self.analyse:<28} {self.synthese}",
             ]
         )

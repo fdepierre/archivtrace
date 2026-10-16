@@ -68,7 +68,7 @@ def suggest_command(summaries: list[NotebookSummary]) -> str:
         return f'python archivtrace.py --query "{target.query}"'
     if summaries:
         return f'python synthesize.py --query "{summaries[0].query}"'
-    return 'python archivtrace.py --query "votre sujet"'
+    return 'python archivtrace.py --query "your topic"'
 
 
 def _site_label(name: str) -> str:
@@ -85,34 +85,34 @@ def render_guide(
     lines = [
         "ArchivTrace",
         "",
-        "1. Collecte   — rechercher et télécharger, avec une pause entre les requêtes",
-        "2. Analyse    — extraire les idées de chaque document (Ollama)",
-        "3. Synthèse   — rédiger la note à partir des analyses relues",
+        "1. Collect    — search and download, with a pause between requests",
+        "2. Analyse    — extract ideas from each document (Ollama)",
+        "3. Synthesize — write the note from the analyses you have read",
         "",
-        "Sites enregistrés",
+        "Saved sites",
     ]
     if not sites:
-        lines.append("- aucun — python archivtrace.py --sites wikipedia")
+        lines.append("- none — python archivtrace.py --sites wikipedia")
     else:
         for name in sites:
             books = [item for item in summaries if item.connector == name]
             if not books:
-                lines.append(f"- {_site_label(name)} ({name}) — pas encore de cahier")
+                lines.append(f"- {_site_label(name)} ({name}) — no notebook yet")
                 continue
             for book in books:
                 lines.append(
                     f"- {_site_label(name)} ({name}) — {book.date}, "
-                    f"{book.sources} source(s), {book.analyzed} analysée(s) "
+                    f"{book.sources} source(s), {book.analyzed} analysed "
                     f"[{book.query}]"
                 )
     lines.extend(
         [
             "",
-            "Commande proposée",
+            "Suggested command",
             suggest_command(summaries),
             "",
-            "Options : --refresh (chercher encore), --from-scratch (tout recommencer), "
-            "--sites (changer les sites).",
+            "Options: --refresh (search again), --from-scratch (start over), "
+            "--sites (change sites).",
         ]
     )
     return "\n".join(lines) + "\n"

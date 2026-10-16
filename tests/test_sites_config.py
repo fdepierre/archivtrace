@@ -21,7 +21,7 @@ def test_catalog_leads_with_tous_and_numbers_wikipedia_first():
     text = format_catalog(Config())
     lines = [line for line in text.splitlines() if line.startswith("  ")]
     assert lines[0].lstrip().startswith("*")
-    assert "tous" in lines[0]
+    assert "all" in lines[0]
     assert lines[1].lstrip().startswith("1")
     assert "Wikipedia" in lines[1]
     assert catalog_names(Config())[0] == "wikipedia"
@@ -41,7 +41,7 @@ def test_parse_empty_choice_is_wikipedia():
 def test_parse_tous_freezes_todays_production_names():
     chosen = parse_site_choice("tous")
     assert chosen == catalog_names(Config())
-    assert "tous" not in chosen
+    assert "all" not in chosen
     assert parse_site_choice("*") == chosen
     assert parse_site_choice("all") == chosen
 

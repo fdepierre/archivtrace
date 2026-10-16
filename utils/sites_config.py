@@ -59,13 +59,13 @@ def format_catalog(cfg: Config | None = None) -> str:
     """Plain-text catalog. ``tous`` is the featured line; Enter means Wikipedia."""
     lines = [
         "Sites",
-        "  *  tous                                       tous les sites en production",
+        "  *  all                                        every production site",
     ]
     for card in catalog_cards(cfg):
         home = card.homepage or "—"
         lines.append(f"  {card.number:<2} {card.display_name:<42} {home}")
     lines.append("")
-    lines.append("Choix (* proposé, Entrée = Wikipedia) :")
+    lines.append("Choice (* suggested, Enter = Wikipedia):")
     return "\n".join(lines)
 
 
@@ -100,8 +100,8 @@ def parse_site_choice(text: str, cfg: Config | None = None) -> list[str]:
             index = int(part)
             if index < 1 or index > len(names):
                 raise ValueError(
-                    f"Numéro de site hors catalogue: {index}. "
-                    f"Choix: 1–{len(names)}, ou tous."
+                    f"Site number out of range: {index}. "
+                    f"Choose 1–{len(names)}, or all."
                 )
             name = names[index - 1]
             if name not in chosen:
@@ -110,8 +110,8 @@ def parse_site_choice(text: str, cfg: Config | None = None) -> list[str]:
     unknown = [part for part in parts if part not in names]
     if unknown:
         raise ValueError(
-            f"Site inconnu: {', '.join(unknown)}. "
-            f"Connus: {', '.join(names)}, ou tous."
+            f"Unknown site: {', '.join(unknown)}. "
+            f"Known: {', '.join(names)}, or all."
         )
     chosen = []
     for part in parts:

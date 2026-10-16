@@ -23,64 +23,69 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="archivtrace",
         description=(
-            "Poursuivre une recherche : sites enregistrés, collecte et analyse. "
-            "Sans argument, affiche le workflow et la prochaine commande."
+            "Continue a research notebook: saved sites, download and analysis. "
+            "With no arguments, print the workflow and the next command."
         ),
     )
     parser.add_argument(
         "--query",
         default=None,
-        help="Sujet à collecter et analyser sur les sites enregistrés.",
+        help="Topic to collect and analyse on the saved sites.",
     )
     parser.add_argument(
         "--sites",
         default=None,
         help=(
-            "Enregistrer les sites (wikipedia, numelyo,gallica, tous). "
-            "Entrée vide au premier lancement = wikipedia."
+            "Save sites (wikipedia, numelyo,gallica, all). "
+            "An empty answer on first launch stores wikipedia."
         ),
     )
     parser.add_argument(
         "--refresh",
         action="store_true",
-        help="Retourner sur les sites et ajouter les documents nouveaux.",
+        help="Search the sites again and append documents that are not in the notebook yet.",
     )
     parser.add_argument(
         "--from-scratch",
         action="store_true",
-        help="Ignorer le cahier existant, retélécharger et ré-analyser.",
+        help="Ignore the existing notebook, download again and re-analyse.",
+    )
+    parser.add_argument(
+        "--collect-only",
+        action="store_true",
+        help="Download without calling the language model.",
     )
     parser.add_argument(
         "--collecte-seule",
         action="store_true",
-        help="Télécharger sans appeler le modèle.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--toutes-les-sources",
         action="store_true",
-        help="Analyser aussi les documents sans match mécanique.",
+        help="Also analyse documents that have no mechanical keyword match.",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Recherche et résolution, sans téléchargement ni modèle.",
+        help="Search and resolve only: no download and no language model.",
     )
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help="Journal ligne à ligne, sans tableau vivant.",
+        help="Line-by-line log instead of the live board.",
     )
     parser.add_argument(
         "--config",
         type=Path,
         default=None,
-        help=f"Fichier de configuration (défaut: {CONFIG_FILENAME}).",
+        help=f"Configuration file (default: {CONFIG_FILENAME}).",
     )
     parser.add_argument(
         "--research-dir",
         type=Path,
         default=None,
-        help="Dossier des cahiers (défaut: output_dir de la configuration).",
+        help="Notebook directory (default: output_dir from the configuration).",
     )
     return parser
 
@@ -101,7 +106,7 @@ def _ensure_sites(
             return None, 2
         write_sites(chosen, config_path)
         labels = ", ".join(chosen)
-        print(f"Sites enregistrés : {labels}")
+        print(f"Sites saved: {labels}")
         return chosen, None
 
     saved = read_sites(config_path)
@@ -112,12 +117,12 @@ def _ensure_sites(
     is_tty = bool(getattr(stdin, "isatty", lambda: False)())
     if not is_tty:
         print("python archivtrace.py --sites wikipedia")
-        print("python archivtrace.py --sites tous")
+        print("python archivtrace.py --sites all")
         return None, 2
     try:
         answer = stdin.readline()  # type: ignore[attr-defined]
     except Exception as exc:  # noqa: BLE001
-        print(f"Lecture du choix impossible: {exc}", file=sys.stderr)
+        print(f"Could not read the site choice: {exc}", file=sys.stderr)
         return None, 2
     try:
         chosen = parse_site_choice(answer, cfg)
@@ -125,7 +130,7 @@ def _ensure_sites(
         print(str(exc), file=sys.stderr)
         return None, 2
     write_sites(chosen, config_path)
-    print(f"Sites enregistrés : {', '.join(chosen)}")
+    print(f"Sites saved: {', '.join(chosen)}")
     return chosen, None
 
 
@@ -173,7 +178,7 @@ def main(
             sites=sites,
             refresh=args.refresh,
             from_scratch=args.from_scratch,
-            collecte_seule=args.collecte_seule,
+            collecte_seule=args.collect_only or args.collecte_seule,
             only_matches=not args.toutes_les_sources,
             dry_run=args.dry_run,
             research_dir=research_dir,

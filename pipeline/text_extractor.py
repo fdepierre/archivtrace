@@ -44,9 +44,9 @@ def pdf_backend_available() -> bool:
 def missing_pdf_backend_message() -> str:
     """Human-readable hint when no PDF backend is installed."""
     return (
-        "Aucun backend PDF installé (pymupdf, pdfplumber ou pypdf). "
-        "Activez l'environnement virtuel du projet "
-        "(Windows: .\\.venv\\Scripts\\Activate.ps1) puis relancez."
+        "No PDF backend installed (pymupdf, pdfplumber, or pypdf). "
+        "Activate the project virtual environment "
+        "(Windows: .\\.venv\\Scripts\\Activate.ps1) and run the command again."
     )
 
 

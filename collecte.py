@@ -34,127 +34,127 @@ def build_parser() -> argparse.ArgumentParser:
     """Define the CLI surface. Defaults are None so config.json can fill them."""
     parser = argparse.ArgumentParser(
         prog="collecte",
-        description="Collecte documentaire orientée recherche (sortie Markdown).",
+        description="Documentary collection (Markdown output).",
         epilog=(
-            "Politiques OCR / timeouts / catalog : config.json. "
-            "Flags Avance = override ponctuel."
+            "OCR, timeouts and catalog policies live in config.json. "
+            "Advanced flags are one-off overrides."
         ),
     )
     intention = parser.add_argument_group("Intention")
-    advanced = parser.add_argument_group("Avance (preferer config.json)")
+    advanced = parser.add_argument_group("Advanced (prefer config.json)")
 
     source = intention.add_mutually_exclusive_group(required=True)
-    source.add_argument("--query", help="Mot-clé / requête de recherche.")
+    source.add_argument("--query", help="Search keyword or query.")
     source.add_argument(
         "--queries-file",
         type=Path,
-        help="Fichier texte contenant une requête par ligne.",
+        help="Text file with one query per line.",
     )
     intention.add_argument(
         "--connector",
         default=DEFAULT_CONNECTOR,
         choices=available_connectors(),
         help=(
-            f"Connecteur source unique (défaut: {DEFAULT_CONNECTOR}). "
-            "Ignoré si --connectors est défini."
+            f"Single source connector (default: {DEFAULT_CONNECTOR}). "
+            "Ignored when --connectors is set."
         ),
     )
     intention.add_argument(
         "--connectors",
         metavar="SPEC",
         help=(
-            "Plusieurs connecteurs : 'all' (numelyo, archives_rhone, archives_map, "
-            "gallica, wikipedia ; + catalog_html si config.json) ou liste séparée "
-            "par des virgules. Exécution parallèle par site."
+            "Several connectors: 'all' (numelyo, archives_rhone, archives_map, "
+            "gallica, wikipedia; plus catalog_html when config.json sets it) "
+            "or a comma-separated list. One Markdown file per site, in parallel."
         ),
     )
     intention.add_argument(
         "--output-dir",
         type=Path,
         default=None,
-        help=f"Répertoire de sortie des fichiers Markdown (défaut: {DEFAULT_OUTPUT_DIR}).",
+        help=f"Markdown output directory (default: {DEFAULT_OUTPUT_DIR}).",
     )
     intention.add_argument(
         "--download-dir",
         type=Path,
         default=None,
-        help=f"Répertoire de cache des fichiers téléchargés (défaut: {DEFAULT_DOWNLOAD_DIR}).",
+        help=f"Downloaded-file cache (default: {DEFAULT_DOWNLOAD_DIR}).",
     )
     intention.add_argument(
         "--dry-run",
         action=argparse.BooleanOptionalAction,
         default=None,
         help=(
-            "Recherche + résolution sans téléchargement lourd; Markdown quand même produit. "
-            "Utiliser --no-dry-run pour forcer le téléchargement malgré config.json."
+            "Search and resolve without a heavy download; Markdown is still written. "
+            "Use --no-dry-run to force downloads despite config.json."
         ),
     )
     intention.add_argument(
         "--verbose",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Logs détaillés (DEBUG). --no-verbose pour forcer INFO malgré config.json.",
+        help="Debug logs. --no-verbose forces INFO despite config.json.",
     )
 
     advanced.add_argument(
-        "--timeout", type=float, default=None, help="Timeout HTTP (s)."
+        "--timeout", type=float, default=None, help="HTTP timeout (seconds)."
     )
     advanced.add_argument(
         "--delay",
         type=float,
         default=None,
-        help="Délai de politesse entre requêtes (s).",
+        help="Politeness delay between requests (seconds).",
     )
     advanced.add_argument(
         "--max-results",
         type=int,
         default=None,
-        help="Nombre max de résultats traités.",
+        help="Maximum number of results to process.",
     )
     advanced.add_argument(
         "--match-mode",
         choices=[m.value for m in MatchMode],
         default=None,
-        help="Mode de matching du mot-clé (défaut: normalized).",
+        help="Keyword match mode (default: normalized).",
     )
     advanced.add_argument(
         "--context-window",
         type=int,
         default=None,
-        help="Taille de la fenêtre de contexte (caractères).",
+        help="Context window size (characters).",
     )
     advanced.add_argument(
         "--enable-ocr",
         action=argparse.BooleanOptionalAction,
         default=None,
         help=(
-            "Activer l'OCR (PaddleOCR) si la couche texte native est insuffisante. "
-            "--no-enable-ocr désactive même si config.json l'active."
+            "Run PaddleOCR when the native text layer is too thin. "
+            "--no-enable-ocr turns it off even if config.json enables it."
         ),
     )
     advanced.add_argument(
         "--collect-max-workers",
         type=int,
         default=None,
-        help="Plafond de workers pour --connectors all (défaut: config / 4).",
+        help="Worker cap for --connectors all (default: config / 4).",
     )
     advanced.add_argument(
         "--ocr-lang",
         default=None,
-        help="Langue OCR (fra→fr pour PaddleOCR, défaut: fra).",
+        help="OCR language (fra maps to Paddle fr; default: fra).",
     )
     advanced.add_argument(
         "--catalog-search-url",
-        help="URL de recherche pour le connecteur catalog_html (doit contenir {query}).",
+        help="Search URL for the catalog_html connector (must contain {query}).",
     )
     advanced.add_argument(
         "--catalog-root",
-        help="Nom d'hôte / source racine enregistré pour catalog_html.",
+        help="Host / root source name recorded for catalog_html.",
     )
     advanced.add_argument(
         "--wikipedia-lang",
         default=None,
-        help="Sous-domaine Wikipedia (défaut: fr → fr.wikipedia.org).",
+        help="Wikipedia subdomain (default: fr → fr.wikipedia.org).",
     )
     return parser
 

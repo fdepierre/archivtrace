@@ -241,6 +241,6 @@ class OcrExtractor:
 def missing_paddleocr_message() -> str:
     """Install hint when PaddleOCR is not importable."""
     return (
-        "OCR demandé (--enable-ocr) mais PaddleOCR est indisponible. "
-        "Installez : pip install paddlepaddle paddleocr"
+        "OCR was requested (--enable-ocr) but PaddleOCR is not available. "
+        "Install it: pip install paddlepaddle paddleocr"
     )

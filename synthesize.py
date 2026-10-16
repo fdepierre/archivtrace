@@ -30,140 +30,132 @@ logger = logging.getLogger("synthese")
 def build_parser() -> argparse.ArgumentParser:
     """Define the ``synthesize.py`` CLI arguments."""
     parser = argparse.ArgumentParser(
-        prog="synthese",
-        epilog="Politiques NLI/CoVe/faits : config.json (bloc synthesis). Flags --verify-cove / --no-nli / --allow-single-source-facts = avances.",
+        prog="synthesize",
+        epilog="NLI/CoVe/facts policies: config.json (synthesis block). Flags --verify-cove / --no-nli / --allow-single-source-facts are advanced.",
         description=(
-            "Synthèse documentaire à partir d'un ou plusieurs Markdown de collecte. "
-            "Par défaut (--query), fusionne tous les sites pour le mot-clé."
+            "Documentary synthesis from one or more collection Markdown files. "
+            "By default (--query), merges every site for the keyword."
         ),
     )
 
-    intention = parser.add_argument_group('Intention')
-    advanced = parser.add_argument_group(
-        'Avance (preferer config.json)',
-    )
+    intention = parser.add_argument_group("Intention")
+    advanced = parser.add_argument_group("Advanced (prefer config.json)")
     intention.add_argument(
         "--query",
         help=(
-            "Mot-clé : découvre et fusionne les fichiers research "
+            "Keyword: discover and merge research files "
             "`{date}_{query}_{connector}_collecte[_analyse_…].md`."
         ),
     )
     intention.add_argument(
         "--input",
         type=Path,
-        help="Fichier Markdown de collecte unique (alternative à --query).",
+        help="Single collection Markdown file (alternative to --query).",
     )
     intention.add_argument(
         "--research-dir",
         type=Path,
         default=None,
-        help=f"Dossier research à explorer avec --query (défaut: {DEFAULT_OUTPUT_DIR}).",
+        help=f"Research directory scanned with --query (default: {DEFAULT_OUTPUT_DIR}).",
     )
     intention.add_argument(
         "--output-dir",
         type=Path,
         default=None,
-        help=f"Répertoire de sortie (défaut: {DEFAULT_SYNTHESIS_DIR}).",
+        help=f"Output directory (default: {DEFAULT_SYNTHESIS_DIR}).",
     )
     advanced.add_argument(
         "--llm",
         choices=["ollama", "openai", "openrouter", "perplexity", "none"],
         default=None,
-        help="Fournisseur LLM (défaut: config.json llm_provider ou ollama; 'none' = template).",
+        help="LLM provider (default: config.json llm_provider or ollama; 'none' = template).",
     )
     advanced.add_argument(
         "--ollama-url",
         default=None,
-        help=f"URL Ollama (défaut: config.json ou {DEFAULT_OLLAMA_HOST}).",
+        help=f"Ollama URL (default: config.json or {DEFAULT_OLLAMA_HOST}).",
     )
     advanced.add_argument(
         "--llm-base-url",
         default=None,
-        help="Base URL API OpenAI-compatible (override du preset fournisseur).",
+        help="OpenAI-compatible API base URL (overrides the provider preset).",
     )
     advanced.add_argument(
         "--llm-api-key",
         default=None,
-        help="Clé API (sinon variables d'environnement OPENAI_/OPENROUTER_/PERPLEXITY_/LLM_API_KEY).",
+        help="API key (else OPENAI_ / OPENROUTER_ / PERPLEXITY_ / LLM_API_KEY env vars).",
     )
     advanced.add_argument(
         "--model",
         default=None,
         help=(
-            "Modèle LLM pour la synthèse (surcharge llm.models.synthesis). "
-            "Alias de --model-synthesis."
+            "LLM model for synthesis (overrides llm.models.synthesis). "
+            "Alias of --model-synthesis."
         ),
     )
     advanced.add_argument(
         "--model-synthesis",
         default=None,
-        help="Modèle Ollama pour la synthèse narrative longue "
-        "(ex. qwen3.5). Surchargeable aussi via LLM_MODEL_SYNTHESIS.",
+        help="Ollama model for long-form narrative synthesis "
+        "(e.g. qwen3.5). Also overridable via LLM_MODEL_SYNTHESIS.",
     )
     intention.add_argument(
         "--mode",
-        choices=["synthese", "contexte"],
-        default="synthese",
-        help="synthese = note de recherche ; contexte = dossier pour rédiger un article.",
+        choices=["synthesis", "context", "synthese", "contexte"],
+        default="synthesis",
+        help="synthesis = research note; context = brief for writing an article.",
     )
     intention.add_argument(
         "--reverify",
         type=Path,
         default=None,
         help=(
-            "Re-applique NLI/CoVe sur une synthèse existante (sans régénérer "
-            "la prose). Sortie: work/synthesys/verified/…_synthese_verified.md."
+            "Re-apply NLI/CoVe on an existing synthesis (does not regenerate "
+            "prose). Output: work/synthesys/verified/…_synthese_verified.md."
         ),
     )
     advanced.add_argument(
         "--timeout",
         type=float,
         default=None,
-        help="Timeout de génération LLM (s) — défaut: config.json ou Config.",
+        help="LLM generation timeout (seconds) — default: config.json or Config.",
     )
     advanced.add_argument(
         "--facts-mode",
         choices=["tiered", "strict", "all"],
         default=None,
         help=(
-            "Promotion des faits: tiered (défaut) | strict | all. "
-            "Surcharge synthesis.facts_mode dans config.json."
+            "Fact promotion: tiered (default) | strict | all. "
+            "Overrides synthesis.facts_mode in config.json."
         ),
     )
     advanced.add_argument(
         "--allow-single-source-facts",
         action="store_true",
-        help=(
-            "Legacy: alias de --facts-mode all "
-            "(préférer --facts-mode ou config.json)."
-        ),
+        help="Legacy alias of --facts-mode all (prefer --facts-mode or config.json).",
     )
     advanced.add_argument(
         "--legacy-corroboration",
         action="store_true",
-        help=(
-            "Legacy: alias de --facts-mode strict "
-            "(préférer --facts-mode ou config.json)."
-        ),
+        help="Legacy alias of --facts-mode strict (prefer --facts-mode or config.json).",
     )
     advanced.add_argument(
         "--verify-cove",
         action="store_true",
         help=(
-            "Chaîne de vérification (CoVe) post-synthèse : recontrôle chaque "
-            "fait établi contre sa citation (appels LLM supplémentaires)."
+            "Post-synthesis chain-of-verification: recheck each established "
+            "fact against its citation (extra LLM calls)."
         ),
     )
     advanced.add_argument(
         "--no-nli",
         action="store_true",
-        help="Désactive le filtre NLI (entailment) sur les faits établis.",
+        help="Disable the NLI (entailment) filter on established facts.",
     )
     advanced.add_argument(
         "--nli-llm",
         action="store_true",
-        help="NLI via LLM au lieu de l'heuristique déterministe.",
+        help="Run NLI with the LLM instead of the deterministic heuristic.",
     )
     intention.add_argument("--verbose", action="store_true")
     return parser
@@ -181,13 +173,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.allow_single_source_facts:
         logger.warning(
-            "Flag legacy --allow-single-source-facts : préférer "
-            "synthesis.facts_mode=all dans config.json"
+            "Legacy flag --allow-single-source-facts: prefer "
+            "synthesis.facts_mode=all in config.json"
         )
     if args.legacy_corroboration:
         logger.warning(
-            "Flag legacy --legacy-corroboration : préférer "
-            "synthesis.facts_mode=strict dans config.json"
+            "Legacy flag --legacy-corroboration: prefer "
+            "synthesis.facts_mode=strict in config.json"
         )
 
     synthesis_model = args.model_synthesis or args.model
@@ -217,7 +209,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.reverify is not None:
         return run_reverify(cfg, synthesis_path=args.reverify, **common).exit_code
-    return run_synthesize(cfg, mode=args.mode, **common).exit_code
+    mode = {"synthesis": "synthese", "context": "contexte"}.get(args.mode, args.mode)
+    return run_synthesize(cfg, mode=mode, **common).exit_code
 
 
 if __name__ == "__main__":

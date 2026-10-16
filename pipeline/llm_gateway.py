@@ -106,8 +106,8 @@ class OllamaBackend(LlmBackend):
             from ollama_shared import OllamaService
         except ModuleNotFoundError as exc:
             raise ModuleNotFoundError(
-                "Paquet 'ollama_shared' introuvable. Activez le venv du projet "
-                "(.venv\\Scripts\\Activate.ps1) ou installez-le :\n"
+                "Package 'ollama_shared' was not found. Activate the project venv "
+                "(.venv\\Scripts\\Activate.ps1) or install it:\n"
                 "  pip install -e ../shared/ollama_shared"
             ) from exc
         self.model = model

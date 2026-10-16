@@ -9,18 +9,18 @@ from pipeline.progress_board import ProgressBoard
 
 def test_board_columns_follow_the_workflow():
     board = ProgressBoard(query="valmontagne", sites=["wikipedia"], interactive=False)
-    board.update("Recherche wikipedia")
-    board.update("Téléchargement Notice A")
-    board.update("Analyse Notice A")
+    board.update("Search wikipedia")
+    board.update("Download Notice A")
+    board.update("Analysis Notice A")
     text = board.render()
     assert "valmontagne · wikipedia" in text
-    assert "Recherche" in text
+    assert "Search" in text
     assert "Notice A" in text
-    assert "pas encore" in text
+    assert "not yet" in text
     assert board.events == [
-        "Recherche wikipedia",
-        "Téléchargement Notice A",
-        "Analyse Notice A",
+        "Search wikipedia",
+        "Download Notice A",
+        "Analysis Notice A",
     ]
 
 
@@ -33,5 +33,5 @@ def test_non_interactive_board_prints_one_line_per_event():
         stream=stream,
     )
     with board:
-        board.update("Téléchargement Notice A")
-    assert "Téléchargement Notice A" in stream.getvalue()
+        board.update("Download Notice A")
+    assert "Download Notice A" in stream.getvalue()
