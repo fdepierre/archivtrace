@@ -1,0 +1,4 @@
+# Every text file keeps Linux line endings (LF), also when checked out on
+# Windows: otherwise editors or Git for Windows convert them to CRLF, and Git
+# then shows every line of those files as changed. Matches .editorconfig.
+* text=auto eol=lf
