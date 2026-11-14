@@ -658,6 +658,37 @@ Test fixture: `tests/fixtures/catalog_results.html`.
 
 ---
 
+## Video transcripts (YouTube2Post)
+
+Videos are not searched by a connector: they are transcribed by
+[YouTube2Post](https://github.com/fdepierre/YouTube2Post), which writes one timestamped
+transcript per video (`yt2post-source/1` JSON: video id, title, channel, language,
+playlists, transcription model and settings, segments with start/end times). That JSON is
+the source of truth for the text; ArchivTrace never copies it into a notebook.
+
+```bash
+python import_sources.py --input ../YouTube2Post/work/sources/youtube --query "Néandertal"
+python analyse.py --input work/research/<date>_neandertal_youtube2post_collecte.md
+```
+
+- `import_sources.py` declares each video as a source of the notebook (`Source type: video`,
+  `Local file:` → its JSON, `Text version:` → the fingerprint of the transcript). The
+  subject (`--query`) defaults to the playlist title.
+- `analyse.py` reads the JSON as passages of about 60 s labelled with their time range
+  (`[Passage 00:36–01:35]` instead of `[Page 2]`), then adds, below the analysis, where
+  each citation is in the transcript: `- Affirmation 1 : [00:36–01:35] (exact) — segments
+  s0003, s0004`. This location is computed from the segments, never asked to the model.
+- Importing again is idempotent: an unchanged video is left as it is (with its analysis), a
+  new video is appended, and a new transcription replaces the file; its previous analysis is
+  kept under `### Analyse obsolète` and the source goes back to "not analysed". Analysis files
+  (`…_analyse_<model>.md`) made on an older transcription are reported.
+- A video is **secondary evidence** (`preuve_secondaire`): a citation proves the statement
+  is made in the video, not that it is established. The transcription is automatic and not
+  proofread (`Text quality note`).
+- Long videos: the analysis still reads one sample of `max_chars` characters per source
+  (about 15 min of speech with the default 12000): longer transcripts are only partly
+  analysed for now.
+
 ## Download strategies
 
 Each connector declares an **ordered** list. The first strategy that `supports(document)` is used.

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from xml.sax.saxutils import escape
+
+from config import DEFAULT_DOWNLOAD_DIR
 
 from pipeline.markdown_reader import ParsedCollection, ParsedSource
 from pipeline.prompt_schemas import (
@@ -13,6 +16,7 @@ from pipeline.prompt_schemas import (
     extract_claims_from_llm_ideas,
 )
 from pipeline.source_classifier import classify_source_heuristic
+from pipeline.source_text import ReferenceText, SourceTextLoader
 from pipeline.synthesis_structure import SourceRecord
 
 logger = logging.getLogger(__name__)
@@ -62,12 +66,12 @@ def _confidence_score(niveau: str) -> float:
     return _CONFIDENCE_SCORE.get((niveau or "").casefold(), 0.5)
 
 
-def _source_text_blob(source: ParsedSource) -> str:
-    parts = [source.title or ""]
-    parts.extend(source.excerpts or [])
-    if source.llm_ideas:
-        parts.append(source.llm_ideas)
-    return "\n".join(parts)
+# Reason given when a claim cannot be re-checked against its source (legacy
+# notebook whose document is gone and which has no mechanical excerpt).
+SOURCE_TEXT_UNAVAILABLE = "texte_source_indisponible"
+# Citation not in the mechanical excerpts, while the full document text could
+# not be read (e.g. an image that needs OCR): not re-verifiable, not refuted.
+NOT_IN_EXCERPTS = "citation_non_retrouvee_dans_extraits_texte_complet_indisponible"
 
 
 def _is_utilisable(source: ParsedSource, catalog_by_id: dict[int, SourceRecord]) -> bool:
@@ -89,8 +93,21 @@ def _is_utilisable(source: ParsedSource, catalog_by_id: dict[int, SourceRecord])
 def collect_grounded_claims(
     collection: ParsedCollection,
     catalog: list[SourceRecord],
+    *,
+    source_text: Callable[[ParsedSource], ReferenceText | None] | None = None,
 ) -> tuple[list[GroundedClaimForSynthesis], list[UnverifiedClaimForSynthesis]]:
-    """Split analyse JSON into confirmed grounded claims vs verification-only items."""
+    """Split analyse JSON into confirmed grounded claims vs verification-only items.
+
+    Each citation is looked for in the source's reference text only (the
+    downloaded document, else its mechanical excerpts): never in the LLM
+    analysis, which contains the citation itself and would prove nothing.
+    ``source_text`` returns that text (with whether it is the whole document),
+    or None when it is unavailable.
+    """
+    if source_text is None:
+        source_text = SourceTextLoader(
+            connector=collection.connector, download_dir=DEFAULT_DOWNLOAD_DIR
+        )
     catalog_by_id = {rec.id: rec for rec in catalog}
     grounded: list[GroundedClaimForSynthesis] = []
     unverified: list[UnverifiedClaimForSynthesis] = []
@@ -115,7 +132,8 @@ def collect_grounded_claims(
                 )
             continue
 
-        blob = _source_text_blob(source)
+        reference: ReferenceText | None = None
+        reference_loaded = False
         for claim in parsed.affirmations:
             claim_seq += 1
             cid = f"C-{claim_seq:03d}"
@@ -157,28 +175,47 @@ def collect_grounded_claims(
                     )
                 )
                 continue
-            match_kind = "exact"
-            if blob:
-                match_kind, score = citation_match_quality(claim.citation_exacte, blob)
-                if match_kind == "none":
-                    logger.info(
-                        "Claim %s citation not found in source blob "
-                        "(best_overlap=%.2f) — keeping as unverified",
-                        cid,
-                        score,
+            if not reference_loaded:  # only for sources with claims to check
+                reference, reference_loaded = source_text(source), True
+            if not reference:
+                logger.info(
+                    "Claim %s: no source text to check its citation against — "
+                    "keeping as unverified",
+                    cid,
+                )
+                unverified.append(
+                    UnverifiedClaimForSynthesis(
+                        claim_id=cid,
+                        source_id=source.index,
+                        source_title=source.title,
+                        reason=SOURCE_TEXT_UNAVAILABLE,
+                        affirmation=claim.affirmation,
+                        citation_exacte=claim.citation_exacte,
+                        theme=claim.theme,
                     )
-                    unverified.append(
-                        UnverifiedClaimForSynthesis(
-                            claim_id=cid,
-                            source_id=source.index,
-                            source_title=source.title,
-                            reason="citation_non_retrouvee_dans_source",
-                            affirmation=claim.affirmation,
-                            citation_exacte=claim.citation_exacte,
-                            theme=claim.theme,
-                        )
+                )
+                continue
+            match_kind, score = citation_match_quality(claim.citation_exacte, reference.text)
+            if match_kind == "none":
+                logger.info(
+                    "Claim %s citation not found in the source text "
+                    "(best_overlap=%.2f) — keeping as unverified",
+                    cid,
+                    score,
+                )
+                unverified.append(
+                    UnverifiedClaimForSynthesis(
+                        claim_id=cid,
+                        source_id=source.index,
+                        source_title=source.title,
+                        reason=("citation_non_retrouvee_dans_source" if reference.complete
+                                else NOT_IN_EXCERPTS),
+                        affirmation=claim.affirmation,
+                        citation_exacte=claim.citation_exacte,
+                        theme=claim.theme,
                     )
-                    continue
+                )
+                continue
 
             rec = catalog_by_id[source.index]
             poids = claim.poids_preuve

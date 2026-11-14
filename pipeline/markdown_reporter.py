@@ -171,6 +171,9 @@ class MarkdownReporter:
             return "\n".join(lines)
         for match in doc.matches[: self.max_excerpts]:
             page = f" _(page {match.page})_" if match.page else ""
+            passage = self._passage_label(doc, match.page)
+            if passage:
+                page = f" _{passage}_"
             excerpt = truncate(match.excerpt, 400)
             lines.append(f"> {excerpt}{page}")
         if doc.match_count > self.max_excerpts:
@@ -183,7 +186,30 @@ class MarkdownReporter:
             return format_pending_llm_section()
         return format_llm_section(llm)
 
+    @staticmethod
+    def _passage_label(doc: CollectedDocument, number: int | None) -> str | None:
+        """The time range of transcript passage `number`, or None for a document page."""
+        from pipeline.transcript_source import passage_label
+
+        if number is None or not doc.extracted:
+            return None
+        for page in doc.extracted.pages:
+            if page.number == number:
+                return passage_label(page)
+        return None
+
     def _location(self, doc: CollectedDocument) -> str:
+        passages = [self._passage_label(doc, m.page) for m in doc.matches]
+        if any(passages):
+            unique = sorted(set(p for p in passages if p))
+            return "\n".join(
+                [
+                    "### Localisation des extraits",
+                    f"- Passage(s): {', '.join(unique)}",
+                    "- Section(s): —",
+                    "- Coordinates or location if available: —",
+                ]
+            )
         pages = sorted({m.page for m in doc.matches if m.page is not None})
         page_str = ", ".join(str(p) for p in pages) if pages else "—"
         sections = sorted({m.section for m in doc.matches if m.section}) or ["—"]
@@ -208,6 +234,9 @@ class MarkdownReporter:
                 f"- Rights: {meta.get('rights', '—')}",
                 f"- Archive reference: {doc.candidate.document_id or '—'}",
             ]
+            # Video: the channel publishes; it is not the author of the content
+            + ([f"- Channel: {meta['channel']}"] if meta.get("channel") else [])
+            + ([f"- Text version: {meta['text_version']}"] if meta.get("text_version") else [])
         )
 
     def _ocr_notes(self, doc: CollectedDocument) -> str:

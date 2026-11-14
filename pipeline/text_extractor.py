@@ -84,6 +84,10 @@ class TextExtractor:
             return ExtractedText(error=f"File not found: {path}")
         if path.suffix.lower() in IMAGE_SUFFIXES:
             return self._extract_image(path)
+        if path.suffix.lower() == ".json":
+            from pipeline.transcript_source import is_transcript_source
+            if is_transcript_source(path):
+                return self._extract_transcript(path)
         if path.suffix.lower() != ".pdf":
             return self._extract_plain(path)
         return self._extract_pdf_with_optional_ocr(path)
@@ -220,6 +224,26 @@ class TextExtractor:
             )
         logger.info("Running OCR on illustration %s", path.name)
         return self._ocr.extract(path)
+
+    @staticmethod
+    def _extract_transcript(path: Path) -> ExtractedText:
+        """A YouTube2Post transcript: passages of segments with their times."""
+        from pipeline.transcript_source import (
+            TranscriptSourceError,
+            load_transcript,
+            transcript_passages,
+        )
+        try:
+            data = load_transcript(path)
+        except TranscriptSourceError as exc:
+            return ExtractedText(error=str(exc))
+        model = (data.get("transcription") or {}).get("model") or "?"
+        return ExtractedText(
+            pages=transcript_passages(data),
+            extractor="yt2post-transcript",
+            # The fidelity of an automatic transcription to the audio is unknown
+            quality_note=f"transcription automatique ({model}), non relue",
+        )
 
     @staticmethod
     def _extract_plain(path: Path) -> ExtractedText:

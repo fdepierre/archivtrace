@@ -60,6 +60,20 @@ def classify_source_heuristic(
             utilisable_comme_preuve=False,
         )
 
+    if conn == "youtube2post" or (source_type or "").casefold() == "video":
+        # A citation proves the statement is made in the video, not that it is
+        # established: never primary evidence on its own.
+        return ClassifySourceResult(
+            classe="preuve_secondaire",
+            confiance="moyen",
+            justification=(
+                "Vidéo (transcription automatique non relue) : la citation prouve que "
+                "le propos y est tenu, pas sa validité ; à confronter à des sources "
+                "primaires ou scientifiques."
+            ),
+            utilisable_comme_preuve=True,
+        )
+
     if conn in _ARCHIVAL_CONNECTORS or _ARCHIVAL_HOST_RE.search(url_l or ""):
         # Do NOT assign preuve_primaire by connector alone — critique externe
         # (source_criticism) upgrades clean records after catalog build.

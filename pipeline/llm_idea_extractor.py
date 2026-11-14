@@ -34,6 +34,14 @@ from utils.strings import truncate
 logger = logging.getLogger(__name__)
 
 
+def _unit_label(page) -> str:
+    """'[Page 3]' for a document, '[Passage 02:05–03:10]' for a transcript."""
+    from pipeline.transcript_source import passage_label
+
+    label = passage_label(page)
+    return f"[Passage {label[1:-1]}]" if label else f"[Page {page.number}]"
+
+
 class LlmIdeaExtractor:
     """Ask the configured LLM gateway to extract grounded claims for a keyword."""
 
@@ -367,12 +375,12 @@ class LlmIdeaExtractor:
             chunks: list[str] = []
             for page in text.pages:
                 if page.number in hit_pages:
-                    chunks.append(f"[Page {page.number}]\n{page.text}")
+                    chunks.append(f"{_unit_label(page)}\n{page.text}")
             for page in text.pages:
                 if page.number not in hit_pages and any(
                     abs(page.number - hp) <= 1 for hp in hit_pages
                 ):
-                    chunks.append(f"[Page {page.number}]\n{page.text}")
+                    chunks.append(f"{_unit_label(page)}\n{page.text}")
             body = "\n\n".join(chunks) if chunks else text.full_text
 
         return (lead + body)[: self.max_chars] if lead else body[: self.max_chars]

@@ -662,6 +662,38 @@ Fixture de test : `tests/fixtures/catalog_results.html`.
 
 ---
 
+## Transcriptions de vidéos (YouTube2Post)
+
+Les vidéos ne sont pas cherchées par un connecteur : elles sont transcrites par
+[YouTube2Post](https://github.com/fdepierre/YouTube2Post), qui écrit une transcription
+horodatée par vidéo (JSON `yt2post-source/1` : identifiant, titre, chaîne, langue,
+playlists, modèle et réglages de transcription, segments avec début et fin). Ce JSON est la
+référence du texte ; ArchivTrace ne le recopie jamais dans un carnet.
+
+```bash
+python import_sources.py --input ../YouTube2Post/work/sources/youtube --query "Néandertal"
+python analyse.py --input work/research/<date>_neandertal_youtube2post_collecte.md
+```
+
+- `import_sources.py` déclare chaque vidéo comme une source du carnet (`Source type: video`,
+  `Local file:` → son JSON, `Text version:` → l'empreinte de la transcription). Le sujet
+  (`--query`) est par défaut le titre de la playlist.
+- `analyse.py` lit le JSON en passages d'environ 60 s repérés par leur intervalle de temps
+  (`[Passage 00:36–01:35]` au lieu de `[Page 2]`), puis ajoute sous l'analyse où se trouve
+  chaque citation : `- Affirmation 1 : [00:36–01:35] (exact) — segments s0003, s0004`. Cette
+  localisation est calculée à partir des segments, jamais demandée au modèle.
+- Réimporter ne crée pas de doublon : une vidéo inchangée garde son analyse, une nouvelle
+  vidéo est ajoutée, et une nouvelle transcription remplace le fichier ; l'analyse précédente
+  est conservée sous `### Analyse obsolète` et la source repasse à « non analysée ». Les
+  fichiers d'analyse (`…_analyse_<modèle>.md`) faits sur une ancienne transcription sont
+  signalés.
+- Une vidéo est une **preuve secondaire** (`preuve_secondaire`) : une citation prouve que le
+  propos y est tenu, pas qu'il est établi. La transcription est automatique et non relue
+  (`Text quality note`).
+- Vidéos longues : l'analyse ne lit encore qu'un échantillon de `max_chars` caractères par
+  source (environ 15 min de parole avec la valeur par défaut de 12000) ; les transcriptions
+  plus longues ne sont pour l'instant analysées qu'en partie.
+
 ## Stratégies de téléchargement
 
 Chaque connecteur déclare une liste **ordonnée**. La première stratégie qui `supports(document)` est utilisée.

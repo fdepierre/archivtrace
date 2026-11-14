@@ -36,6 +36,7 @@ class SourceType(str, Enum):
     MANUSCRIPT = "manuscript"
     WEBPAGE = "webpage"
     DATASET = "dataset"
+    VIDEO = "video"
 
 
 class MatchType(str, Enum):
@@ -122,10 +123,18 @@ class KeywordMatch:
 
 @dataclass(slots=True)
 class ExtractedPage:
-    """Text extracted from a single page/unit of a document."""
+    """Text extracted from a single page/unit of a document.
+
+    For a video transcript, a unit is a passage of consecutive segments: it is
+    located by its start/end time and segment ids, and ``number`` is only its
+    index (a minute of video is not a page).
+    """
 
     number: int
     text: str
+    start_seconds: float | None = None
+    end_seconds: float | None = None
+    segment_ids: tuple[str, ...] | None = None
 
 
 @dataclass(slots=True)

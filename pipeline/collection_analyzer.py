@@ -14,6 +14,7 @@ from pipeline.llm_gateway import LlmGateway
 from pipeline.llm_idea_extractor import LlmIdeaExtractor
 from pipeline.markdown_patcher import patch_collection_markdown
 from pipeline.markdown_reader import ParsedCollection, read_collection
+from pipeline.source_text import resolve_source_file
 from pipeline.text_extractor import TextExtractor
 from utils.files import write_text
 from utils.strings import keyword_variants
@@ -193,6 +194,8 @@ class CollectionAnalyzer:
                 cote=source.archive_reference or source.document_id,
                 date=source.date,
             )
+            if extraction.body and extraction.claims and extracted.extractor == "yt2post-transcript":
+                extraction.body = _with_citation_locations(extraction, pdf_path)
             updates[source.index] = extraction
             from pipeline.quality_report import EXTRACTION_QUALITY
 
@@ -287,37 +290,17 @@ class CollectionAnalyzer:
     def _resolve_pdf(
         self, source, collection: ParsedCollection
     ) -> Path | None:
-        root = Path.cwd()
-        if source.local_file:
-            for candidate in self._local_file_candidates(source.local_file, root):
-                if candidate.exists():
-                    return candidate
+        return resolve_source_file(
+            source, connector=collection.connector, download_dir=self.download_dir
+        )
 
-        connector = source.connector or collection.connector
-        doc_id = source.document_id
-        if connector and doc_id:
-            for ext in (".pdf", ".jpg", ".jpeg", ".png"):
-                candidate = self.download_dir / connector / f"{doc_id}{ext}"
-                if not candidate.is_absolute():
-                    candidate = root / candidate
-                if candidate.exists():
-                    return candidate
-        return None
 
-    @staticmethod
-    def _local_file_candidates(local_file: Path, root: Path) -> list[Path]:
-        """Resolve local_file against cwd, with legacy downloads/ → work/downloads/."""
-        if local_file.is_absolute():
-            return [local_file]
-        candidates = [root / local_file]
-        parts = local_file.parts
-        if parts and parts[0] == "downloads":
-            remapped = root / "work" / local_file
-            candidates.append(remapped)
-        elif len(parts) >= 2 and parts[0] == "work" and parts[1] == "downloads":
-            legacy = root / Path(*parts[1:])
-            candidates.append(legacy)
-        return candidates
+def _with_citation_locations(extraction: LlmExtraction, path: Path) -> str:
+    """The analysis body followed by the time range of each citation in the transcript."""
+    from pipeline.transcript_source import citation_locations_markdown, load_transcript
+
+    block = citation_locations_markdown(extraction.claims, load_transcript(path)["segments"])
+    return f"{extraction.body.rstrip()}\n\n{block}" if block else extraction.body
 
 
 def load_collection(path: Path) -> ParsedCollection:

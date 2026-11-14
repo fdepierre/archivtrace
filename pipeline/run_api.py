@@ -507,7 +507,15 @@ def run_reverify(
         llm=None,
         classify_with_llm=False,
     )
-    grounded_raw, unverified = collect_grounded_claims(collection, catalog)
+    from pipeline.source_text import SourceTextLoader
+
+    grounded_raw, unverified = collect_grounded_claims(
+        collection,
+        catalog,
+        source_text=SourceTextLoader(
+            connector=collection.connector, download_dir=cfg.download_dir
+        ),
+    )
     grounded, unverified = apply_corroboration(
         grounded_raw,
         unverified,
