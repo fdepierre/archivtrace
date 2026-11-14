@@ -14,7 +14,7 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
-from config import Config
+from config import DEFAULT_LLM_FALLBACK_MODEL, Config
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ LlmTask = Literal[
     "article_context",
 ]
 
-# Extraction (gemma4:26b): thinking OFF — we need fast, schema-valid JSON and
+# Extraction: thinking OFF — we need fast, schema-valid JSON and
 # native structured output; reasoning tokens would slow validation and blur the
 # citation contract. Synthesis (qwen3.5): thinking defaults OFF because it often
 # exhausts num_predict before the required JSON fences; if enabled, callers must
@@ -140,7 +140,7 @@ def get_model_for_task(task: str, config: Config | None = None) -> ModelConfig:
     )
     return ModelConfig(
         task=role,
-        model=(model or fallback or "llama3.2").strip(),
+        model=(model or fallback or DEFAULT_LLM_FALLBACK_MODEL).strip(),
         thinking=bool(thinking),
         temperature=temperature,
         output_format=output_format,

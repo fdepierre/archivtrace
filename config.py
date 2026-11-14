@@ -46,11 +46,13 @@ DEFAULT_LLM_LOG_MAX_BYTES = 5_000_000
 DEFAULT_LLM_LOG_BACKUP_COUNT = 10
 
 # Task-scoped Ollama models (see pipeline/llm_task_models.py).
-# Extraction: grounded claims + JSON — prefer a model strong on uncertainty.
+# Defaults that run on an ordinary computer (qwen3.5 is ~6.6 GB, the 4b
+# fallback ~3.3 GB, and fits a 6 GB GPU). Extraction: grounded claims + JSON;
+# a larger model (e.g. gemma4:26b, ~17 GB) can be set in config.json.
 # Synthesis: long-context narrative — prefer a large context window model.
-DEFAULT_LLM_MODEL_EXTRACTION = "gemma4:26b"
+DEFAULT_LLM_MODEL_EXTRACTION = "qwen3.5"
 DEFAULT_LLM_MODEL_SYNTHESIS = "qwen3.5"
-DEFAULT_LLM_FALLBACK_MODEL = "llama3.2"
+DEFAULT_LLM_FALLBACK_MODEL = "qwen3.5:4b"
 DEFAULT_LLM_THINKING_EXTRACTION = False
 # Off by default: qwen3.5 thinking often consumes the budget and skips the
 # required structured JSON fences; enable explicitly for experiments.

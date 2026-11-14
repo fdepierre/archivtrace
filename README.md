@@ -51,7 +51,7 @@ Three kinds of documents are produced:
 
 > **Useful vocabulary**
 > - **Markdown (`.md`)**: simple text format, readable as-is, with headings and lists.
-> - **LLM / model**: generative AI program. By default two local Ollama models are used — `gemma4:26b` for per-document extraction, `qwen3.5` for long synthesis (see Configuration).
+> - **LLM / model**: generative AI program. By default the local Ollama model `qwen3.5` is used for both per-document extraction and long synthesis, with `qwen3.5:4b` as fallback (see Configuration).
 > - **Terminal**: window where you type commands (PowerShell on Windows, bash on Linux/WSL).
 > - **Keyword / query**: the term you search for, e.g. `valmontagne`.
 
@@ -117,25 +117,25 @@ python3 --version
 
 ### Step 2 — Install Ollama and the AI models
 
-Ollama runs artificial intelligence **on your machine**. Recommended downloads (~24 GB total once):
+Ollama runs artificial intelligence **on your machine**. Recommended downloads (~10 GB total once), which run on an ordinary computer (a 6 GB graphics card is enough to speed them up):
 
 | Model | Role | Approx. size |
 |---|---|---|
-| `gemma4:26b` | Per-document claim extraction (JSON + citations) | ~17 GB |
-| `qwen3.5` | Long-context synthesis | ~6.6 GB |
-| `llama3.2` (optional) | Fallback if a task model is missing | ~2 GB |
+| `qwen3.5` | Per-document claim extraction (JSON + citations) and long-context synthesis | ~6.6 GB |
+| `qwen3.5:4b` | Fallback if a task model is missing | ~3.3 GB |
+
+With a lot of memory (about 24 GB of graphics memory, or patience on the CPU), a larger extraction model can be set in `config.json`, e.g. `"extraction": "gemma4:26b"` (~17 GB).
 
 | | **Windows** | **Linux** | **WSL** |
 |---|---|---|---|
 | Install Ollama | Installer from [ollama.com/download](https://ollama.com/download) — tray icon once launched | `curl -fsSL https://ollama.com/install.sh \| sh` | **Option A (recommended)**: install Ollama on **Windows** (installer) — reachable from WSL via `localhost` · **Option B**: Linux script in the Ubuntu terminal |
-| Download models | `ollama pull gemma4:26b` then `ollama pull qwen3.5` | same | same |
+| Download models | `ollama pull qwen3.5` then `ollama pull qwen3.5:4b` | same | same |
 | Verify | `ollama list` — both models should appear | same | same |
 
 **Common commands (Windows PowerShell, Linux, or WSL):**
 ```bash
-ollama pull gemma4:26b
 ollama pull qwen3.5
-ollama pull llama3.2   # optional fallback
+ollama pull qwen3.5:4b   # fallback
 ollama list
 ```
 
@@ -313,7 +313,7 @@ Results are in the **`work/research/`** and **`work/synthesys/`** folders. Open 
 │  STEP 2 — ANALYSIS                          analyse.py                  │
 │                                                                         │
 │  Re-reads Markdown + local PDFs ──► LLM task « extraction »             │
-│  (default model: gemma4:26b — JSON claims + verbatim citations)         │
+│  (default model: qwen3.5 — JSON claims + verbatim citations)            │
 │                    │                                                    │
 │                    ▼                                                    │
 │         work/research/{date}_{topic}_{connector}_collecte.md  (enriched)    │
@@ -348,10 +348,10 @@ Results are in the **`work/research/`** and **`work/synthesys/`** folders. Open 
 
 | When | Command | Module | Task role | Default Ollama model |
 |---|---|---|---|---|
-| After collection | `analyse.py` | `llm_idea_extractor.py` | `extraction` | `gemma4:26b` |
+| After collection | `analyse.py` | `llm_idea_extractor.py` | `extraction` | `qwen3.5` |
 | After analysis | `synthesize.py` | `synthesizer.py` | `synthesis` | `qwen3.5` |
 
-Routing lives in `pipeline/llm_task_models.py` (`get_model_for_task`). One call path (`LlmGateway`); model id, thinking flag, and fallback are chosen per task. Missing local models warn and fall back to `llm.fallback_model` (default `llama3.2`) instead of crashing. Details: [Configuration — Multi-model Ollama](#multi-model-ollama-task-routing).
+Routing lives in `pipeline/llm_task_models.py` (`get_model_for_task`). One call path (`LlmGateway`); model id, thinking flag, and fallback are chosen per task. Missing local models warn and fall back to `llm.fallback_model` (default `qwen3.5:4b`) instead of crashing. Details: [Configuration — Multi-model Ollama](#multi-model-ollama-task-routing).
 
 The mechanical matcher (`keyword_matcher.py`) remains useful: it quickly locates pages and passages containing the keyword, and serves as localization hints for the LLM.
 
@@ -735,7 +735,7 @@ These excerpts appear in the Markdown under **« Extraits liés au mot-clé »**
 
 Module: `pipeline/llm_idea_extractor.py`  
 Command: **`analyse.py`** (separate step, after `collecte.py`).  
-Default task model: **`gemma4:26b`** (`llm.models.extraction`) — thinking off for strict JSON.
+Default task model: **`qwen3.5`** (`llm.models.extraction`) — thinking off for strict JSON.
 
 All LLM traffic goes through **`pipeline.llm_gateway.LlmGateway`** (`build_llm_gateway(..., task="extraction")`).
 
@@ -918,9 +918,9 @@ Typed container passed to all components. Main fields:
 | `ocr_dpi` | 200 | PDF rasterization DPI before OCR |
 | `ollama_host` | `http://localhost:11434` | Ollama URL when `llm_provider=ollama` |
 | `llm_provider` | `ollama` | `ollama` \| `openai` \| `openrouter` \| `perplexity` \| `none` |
-| `llm_model_extraction` | `gemma4:26b` | Model for grounded claim extraction |
+| `llm_model_extraction` | `qwen3.5` | Model for grounded claim extraction |
 | `llm_model_synthesis` | `qwen3.5` | Model for long-context synthesis |
-| `llm_fallback_model` | `llama3.2` | Used when the task model is not installed |
+| `llm_fallback_model` | `qwen3.5:4b` | Used when the task model is not installed |
 | `llm_thinking_extraction` | `false` | Ollama `think` for extraction (keep off for JSON) |
 | `llm_thinking_synthesis` | `false` | Ollama `think` for synthesis (off by default — often skips JSON fences) |
 | `llm_model` / `ollama_model` | `qwen3.5` | Legacy single-model fallback |
@@ -937,7 +937,7 @@ later feed an online service). Resolution goes through
 
 | Task | Typical use | Default model | Thinking |
 |---|---|---|---|
-| `extraction` | `analyse.py` / claim JSON | `gemma4:26b` | off |
+| `extraction` | `analyse.py` / claim JSON | `qwen3.5` | off |
 | `synthesis` | `synthesize.py` narrative | `qwen3.5` | off (set `true` to experiment) |
 | `classification` | source class | same as extraction | off |
 
@@ -991,10 +991,10 @@ synth = run_synthesize(cfg, query="valmontagne")
         "host": "http://localhost:11434",
         "timeout": 900,
         "models": {
-            "extraction": "gemma4:26b",
+            "extraction": "qwen3.5",
             "synthesis": "qwen3.5"
         },
-        "fallback_model": "llama3.2",
+        "fallback_model": "qwen3.5:4b",
         "thinking_mode": {
             "extraction": false,
             "synthesis": false
@@ -1057,9 +1057,8 @@ pip install -r requirements.txt
 
 ```bash
 ollama serve          # if the service is not already running
-ollama pull gemma4:26b
 ollama pull qwen3.5
-ollama pull llama3.2  # optional fallback
+ollama pull qwen3.5:4b  # fallback
 ```
 
 ### Optional dependencies

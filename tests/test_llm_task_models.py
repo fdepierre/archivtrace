@@ -15,7 +15,7 @@ def test_get_model_for_task_defaults():
     cfg = Config()
     extraction = get_model_for_task("extraction", cfg)
     synthesis = get_model_for_task("synthesis", cfg)
-    assert extraction.model == "gemma4:26b"
+    assert extraction.model == "qwen3.5"
     assert extraction.thinking is False
     assert extraction.output_format == "json"
     assert synthesis.model == "qwen3.5"

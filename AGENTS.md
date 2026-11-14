@@ -44,8 +44,8 @@ All calls go through **`pipeline.llm_gateway.LlmGateway`** (`build_llm_gateway(.
 
 Providers: `ollama` (default), `openai`, `openrouter`, `perplexity`, `none`.
 Task-scoped models via `pipeline.llm_task_models.get_model_for_task` /
-nested `llm.models` in `config.json` (`extraction` → gemma4:26b, `synthesis` → qwen3.5,
-`fallback_model` → llama3.2). Thinking defaults: both off (synthesis thinking
+nested `llm.models` in `config.json` (`extraction` → qwen3.5, `synthesis` → qwen3.5,
+`fallback_model` → qwen3.5:4b). Thinking defaults: both off (synthesis thinking
 often drops required JSON fences). Missing Ollama tags → warn + fallback, no crash.
 
 **Docs split:** README = architecture / contracts / config / CLI.

@@ -28,7 +28,7 @@
 
       // Grounded claim extraction (JSON, citations) — uncertainty-aware model
 
-      "extraction": "gemma4:26b",
+      "extraction": "qwen3.5",
 
       // Long-context narrative synthesis
 
@@ -36,11 +36,11 @@
 
       // Optional classification model (defaults to extraction when omitted):
 
-      // "classification": "gemma4:26b"
+      // "classification": "qwen3.5"
 
     },
 
-    "fallback_model": "llama3.2",
+    "fallback_model": "qwen3.5:4b",
 
     // Thinking: OFF for extraction (strict JSON). Synthesis default OFF too —
 

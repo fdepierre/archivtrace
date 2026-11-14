@@ -84,7 +84,7 @@ def test_project_config_json_loads():
     cfg = load_config(root_config)
     assert cfg.llm_provider == "ollama"
     assert cfg.llm_model_synthesis == "qwen3.5"
-    assert cfg.llm_model_extraction == "gemma4:26b"
+    assert cfg.llm_model_extraction == "qwen3.5"
 
 
 def test_ollama_service_generate_delegates_to_chat():
