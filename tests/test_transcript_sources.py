@@ -296,3 +296,19 @@ def test_block_with_a_too_long_answer_is_split_in_halves(tmp_path):
     assert backend.calls > blocks
     assert "NON ANALYSÉ" not in text
     assert "Phrase numéro 7 :" in text or "Phrase numéro 4 :" in text  # the halves analysed
+
+
+def test_windows_path_is_written_as_is():
+    from pipeline.transcript_import import _update_section
+
+    section = "### Source 1\n- Local file: old.json\n- Text version: sha256:aaaa\n"
+    doc = build_document_stub("sha256:bbbb")
+    updated = _update_section(section, doc, r"C:\Users\franc\work\sources\x.json")
+    assert r"- Local file: C:\Users\franc\work\sources\x.json" in updated
+    assert "- Text version: sha256:bbbb" in updated
+
+
+def build_document_stub(version):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(candidate=SimpleNamespace(raw_metadata={"text_version": version}))

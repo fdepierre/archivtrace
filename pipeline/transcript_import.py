@@ -181,9 +181,10 @@ def _obsolete(section: str, old_version: str) -> str:
 def _update_section(section: str, doc: CollectedDocument, local_file: str) -> str:
     version = doc.candidate.raw_metadata["text_version"]
     old = _TEXT_VERSION_LINE.search(section)
-    section = _LOCAL_FILE_LINE.sub(f"- Local file: {local_file}", section, count=1)
+    # A function, not a template: a Windows path (C:\Users\...) holds backslashes
+    section = _LOCAL_FILE_LINE.sub(lambda _: f"- Local file: {local_file}", section, count=1)
     if old:
-        section = _TEXT_VERSION_LINE.sub(f"- Text version: {version}", section, count=1)
+        section = _TEXT_VERSION_LINE.sub(lambda _: f"- Text version: {version}", section, count=1)
     return _obsolete(section, old.group(1) if old else "")
 
 
