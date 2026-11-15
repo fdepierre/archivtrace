@@ -22,7 +22,6 @@ from connectors.gallica.parsing import (
     parse_results,
     pdf_url,
     pick_download_url,
-    preview_url,
 )
 from models import DocumentCandidate, DocumentStatus, ResolvedDocument, SourceType
 from strategies.base import DownloadStrategy

@@ -158,7 +158,7 @@ class Config:
 
 
 def resolve_facts_mode(
-    cfg: "Config",
+    cfg: Config,
     *,
     facts_mode: str | None = None,
     allow_single_source_facts: bool = False,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 
 from pipeline.corroboration_checker import confidence_gate
 from pipeline.grounded_claims import GroundedClaimForSynthesis

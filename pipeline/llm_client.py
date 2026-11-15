@@ -12,29 +12,16 @@ Task-scoped model selection: ``pipeline.llm_task_models.get_model_for_task``.
 
 from __future__ import annotations
 
-
-
 from pipeline.llm_gateway import (
-
     DEFAULT_MODEL,
-
     DEFAULT_OLLAMA_URL,
-
     LlmClient,
-
     LlmGateway,
-
     OllamaClient,
-
     TemplateSynthesizer,
-
     build_llm_gateway,
-
 )
-
 from pipeline.llm_task_models import ModelConfig, get_model_for_task
-
-
 
 __all__ = [
 

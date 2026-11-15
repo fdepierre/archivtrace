@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from config import DEFAULT_LLM_LOG_DIR
@@ -134,7 +134,7 @@ def quality_report_path(
     when: datetime | None = None,
 ) -> Path:
     """Default path: ``work/logs/llm/{date}_{query}_{kind}_quality.md``."""
-    stamp = (when or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
+    stamp = (when or datetime.now(UTC)).strftime("%Y-%m-%d")
     slug = slugify(query) or "query"
     base = Path(log_dir) if log_dir is not None else DEFAULT_LLM_LOG_DIR
     return base / f"{stamp}_{slug}_{kind}_quality.md"
@@ -188,8 +188,13 @@ def _metrics_from_collection(
         "themes": dict(sorted(themes.items(), key=lambda kv: (-kv[1], kv[0]))),
         "live": live or {},
         "validation": VALIDATION_STATS.snapshot(),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
     }
+
+
+def _count(value: object) -> int:
+    """A counter read from the metrics dict (0 when absent)."""
+    return int(value) if isinstance(value, int | float | str) and value != "" else 0
 
 
 def render_analyse_quality_markdown(metrics: dict[str, object]) -> str:
@@ -198,8 +203,8 @@ def render_analyse_quality_markdown(metrics: dict[str, object]) -> str:
     assert isinstance(live, dict)
     validation = metrics.get("validation") or {}
     themes = metrics.get("themes") or {}
-    confirmed = int(metrics.get("claims_confirmed") or 0)
-    insufficient = int(metrics.get("claims_insufficient") or 0)
+    confirmed = _count(metrics.get("claims_confirmed"))
+    insufficient = _count(metrics.get("claims_insufficient"))
     total_claims = confirmed + insufficient
     confirm_rate = (confirmed / total_claims) if total_claims else 0.0
 
@@ -310,7 +315,7 @@ def render_synthesis_quality_markdown(
         f"# Rapport qualité — synthèse — {query}",
         "",
         "## Métadonnées",
-        f"- Généré: `{datetime.now(timezone.utc).isoformat()}`",
+        f"- Généré: `{datetime.now(UTC).isoformat()}`",
         f"- Corpus: `{source_paths}`",
         f"- Backend: `{llm_backend}`",
         f"- Modèle: `{model or '—'}`",

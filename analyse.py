@@ -20,8 +20,8 @@ import sys
 from pathlib import Path
 
 from config import DEFAULT_DOWNLOAD_DIR, DEFAULT_OLLAMA_HOST, DEFAULT_OLLAMA_MODEL
-from utils.app_config import resolve_settings
 from pipeline.run_api import run_analyse
+from utils.app_config import resolve_settings
 
 logger = logging.getLogger("analyse")
 

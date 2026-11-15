@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-import sys
 
 from connectors.meta import get_connector_info
 from pipeline.markdown_reader import read_collection
@@ -52,7 +52,7 @@ def notebook_summaries(research_dir: Path) -> list[NotebookSummary]:
             NotebookSummary(
                 query=parsed.query,
                 query_slug=info.query_slug,
-                connector=info.connector,
+                connector=info.connector or "",  # only files with a connector are kept
                 date=info.date,
                 path=info.path,
                 sources=len(parsed.sources),

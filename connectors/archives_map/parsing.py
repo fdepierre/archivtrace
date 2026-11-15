@@ -6,11 +6,12 @@ No HTTP — BeautifulSoup / regex over HTML strings only.
 from __future__ import annotations
 
 import re
-from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup, Tag
 
 from models import DocumentCandidate, SourceType
+from utils.html import attr, required_attr
 from utils.strings import collapse_whitespace
 
 HOST = "archives-map.culture.gouv.fr"
@@ -99,7 +100,7 @@ def parse_inventories(html: str) -> list[tuple[str, int | None, str]]:
     found: list[tuple[str, int | None, str]] = []
     seen: set[str] = set()
     for anchor in soup.select("a[href*='FRAMAP_']"):
-        href = anchor.get("href") or ""
+        href = attr(anchor, "href")
         framap_match = _FRAMAP_RE.search(href)
         if not framap_match:
             continue
@@ -155,7 +156,7 @@ def _field_map(item: Tag) -> dict[str, str]:
 
 def _parse_card(item: Tag, *, base_url: str) -> DocumentCandidate | None:
     detail = item.select_one("a.detail[href*='view:'], a[href*='/view:']")
-    href = detail.get("href") if detail else None
+    href = attr(detail, "href") if detail else ""
     if not href:
         # Digitized-only cards may expose the notice id via togglediv id="D_123".
         toggle = item.select_one(".togglediv[id^='D_']")
@@ -165,10 +166,10 @@ def _parse_card(item: Tag, *, base_url: str) -> DocumentCandidate | None:
         # Reconstruct notice URL when possible from ark binder link.
         binder = item.select_one("a.gestion_classeur[href*='/notice/']")
         view_id = None
-        if toggle and toggle.get("id", "").startswith("D_"):
-            view_id = toggle["id"][2:]
+        if toggle and attr(toggle, "id").startswith("D_"):
+            view_id = attr(toggle, "id")[2:]
         elif binder:
-            parts = (binder.get("href") or "").split("/")
+            parts = attr(binder, "href").split("/")
             # …/notice/<viewId>/<internalId>/…
             try:
                 idx = parts.index("notice")
@@ -181,7 +182,7 @@ def _parse_card(item: Tag, *, base_url: str) -> DocumentCandidate | None:
         if view_id and framap:
             href = f"/archive/fonds/{framap}/view:{view_id}"
         elif ark:
-            href = ark.get("href")
+            href = attr(ark, "href")
         else:
             return None
 
@@ -227,13 +228,13 @@ def _parse_card(item: Tag, *, base_url: str) -> DocumentCandidate | None:
     ark_url: str | None = None
 
     for anchor in item.select("a[href*='/ark:']"):
-        link = absolute_url(anchor["href"], base_url=base_url)
+        link = absolute_url(required_attr(anchor, "href"), base_url=base_url)
         ark_url = ark_url or link
         if "/dao/" in link:
             viewer_url = link
 
     for img in item.select("img[src]"):
-        src = absolute_url(img["src"], base_url=base_url)
+        src = absolute_url(required_attr(img, "src"), base_url=base_url)
         if _IIP_RE.search(src):
             thumbnail_url = src
             image_url = enlarge_iip_url(src)

@@ -8,7 +8,6 @@ from pathlib import Path
 from archivtrace import main
 from pipeline.workflow_guide import NotebookSummary, render_run_report
 
-
 _PENDING = """# Collecte de recherche — valmontagne
 
 ## Métadonnées

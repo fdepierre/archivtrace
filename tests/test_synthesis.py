@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 
 from pipeline.markdown_reader import read_collection
@@ -70,10 +71,10 @@ def test_synthesis_prompt_respects_budget():
 
 
 def test_synthesis_render_appends_reference_urls(tmp_path):
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    from pipeline.synthesizer import SynthesisResult
     from pipeline.synthesis_structure import SourceRecord, StructuredSynthesisData
+    from pipeline.synthesizer import SynthesisResult
 
     synthesizer = Synthesizer(llm=None, use_template_fallback=True)
     catalog = [
@@ -108,7 +109,7 @@ def test_synthesis_render_appends_reference_urls(tmp_path):
         body="## Contexte\n\nTexte.",
         llm_backend="template",
         model=None,
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
         references=[
             ("Journal test", "https://example.org/doc/1", "numelyo"),
             ("Sans URL", None, "archives_rhone"),

@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from xml.sax.saxutils import escape
 
 from config import DEFAULT_DOWNLOAD_DIR
-
 from pipeline.markdown_reader import ParsedCollection, ParsedSource
 from pipeline.prompt_schemas import (
     AnalyzeDocumentResult,

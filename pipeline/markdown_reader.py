@@ -14,44 +14,24 @@ Format markers live in `markdown_format` — do not hard-code them here.
 
 from __future__ import annotations
 
-
-
 import re
-
 from dataclasses import dataclass, field
-
 from pathlib import Path
-
-
 
 from config import DEFAULT_CONNECTOR
 from models import MatchMode
-
 from pipeline.markdown_format import (
-
-    EXCERPTS_HEADING,
-
     EXCERPT_RE,
-
+    EXCERPTS_HEADING,
     LLM_HEADING,
-
     LLM_MODEL_PREFIX,
-
     SOURCE_SPLIT_RE,
-
     SOURCE_TITLE_RE,
-
     classify_llm_block,
-
     clean_llm_block,
-
     llm_skip_on_resume,
-
     section_body,
-
 )
-
-
 
 _QUERY_RE = re.compile(r"^#\s*Collecte de recherche\s*[—-]\s*(.+)$", re.MULTILINE)
 

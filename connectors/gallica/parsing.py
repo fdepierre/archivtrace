@@ -83,7 +83,7 @@ def parse_result_count(xml: str) -> int | None:
     node = root.find("srw:numberOfRecords", _NS)
     if node is None or not (node.text or "").strip().isdigit():
         return None
-    return int(node.text.strip())
+    return int((node.text or "").strip())
 
 
 def parse_next_start_record(xml: str) -> int | None:
@@ -95,7 +95,7 @@ def parse_next_start_record(xml: str) -> int | None:
     node = root.find("srw:nextRecordPosition", _NS)
     if node is None or not (node.text or "").strip().isdigit():
         return None
-    return int(node.text.strip())
+    return int((node.text or "").strip())
 
 
 def parse_results(xml: str) -> list[DocumentCandidate]:

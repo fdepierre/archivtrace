@@ -6,8 +6,8 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from models import LlmExtraction
 from config import DEFAULT_LLM_MAX_CHARS
+from models import LlmExtraction
 from pipeline.analyse_policy import should_process
 from pipeline.keyword_matcher import KeywordMatcher
 from pipeline.llm_gateway import LlmGateway

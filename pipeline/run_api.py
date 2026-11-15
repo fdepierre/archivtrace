@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from config import (
     DEFAULT_ANALYSE_CACHE_DIR,
@@ -26,6 +26,9 @@ from pipeline.llm_task_models import get_model_for_task
 from pipeline.markdown_reader import merge_collections, read_collection
 from pipeline.synthesizer import Synthesizer
 from utils.research_paths import discover_corpus_files
+
+if TYPE_CHECKING:
+    from pipeline.corroboration_checker import PromotionMode
 
 logger = logging.getLogger("run_api")
 
@@ -521,7 +524,7 @@ def run_reverify(
         grounded_raw,
         unverified,
         catalog,
-        promotion_mode=promotion_mode,
+        promotion_mode=cast("PromotionMode", promotion_mode),
     )
 
     raw = synthesis_path.read_text(encoding="utf-8")

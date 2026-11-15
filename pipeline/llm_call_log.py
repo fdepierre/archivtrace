@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -71,7 +71,7 @@ def log_llm_call(
 ) -> dict[str, Any]:
     """Append one structured call record. Returns the payload (for tests)."""
     record: dict[str, Any] = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "provider": provider,
         "model": model,
         "operation": operation,

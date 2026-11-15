@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ollama_shared import DEFAULT_MODEL, OllamaService
+
 from utils.app_config import load_config, load_json_config, ollama_settings, strip_jsonc
 
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from utils.analyse_paths import (
-    annotate_analyse_metadata,
     derive_analyse_output_path,
     model_slug,
     prepare_analyse_output,

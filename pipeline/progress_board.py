@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from typing import TextIO
+from typing import Any, TextIO
 
 
 class ProgressBoard:
@@ -32,7 +32,7 @@ class ProgressBoard:
         self.synthese = "—"
         self._live: object | None = None
 
-    def __enter__(self) -> "ProgressBoard":
+    def __enter__(self) -> ProgressBoard:
         if not self.interactive:
             return self
         try:
@@ -81,7 +81,7 @@ class ProgressBoard:
             return
         print(line, file=self.stream, flush=True)
 
-    def _colored_board(self) -> object:
+    def _colored_board(self) -> Any:
         """Live panel: cyan frame, colored column headers."""
         from rich.panel import Panel
         from rich.table import Table

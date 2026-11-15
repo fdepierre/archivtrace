@@ -8,8 +8,8 @@ from pipeline.corroboration_checker import apply_corroboration
 from pipeline.grounded_claims import GroundedClaimForSynthesis
 from pipeline.markdown_reader import ParsedCollection, ParsedSource
 from pipeline.prompt_schemas import SynthesisFact, SynthesisOutput
-from pipeline.synthesizer import Synthesizer
 from pipeline.synthesis_structure import SourceRecord
+from pipeline.synthesizer import Synthesizer
 
 
 def _claim(**kwargs) -> GroundedClaimForSynthesis:

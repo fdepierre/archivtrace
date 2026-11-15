@@ -9,7 +9,7 @@ from typing import Protocol
 from pipeline.cove_verifier import CoveResult, apply_cove_to_synthesis
 from pipeline.grounded_claims import GroundedClaimForSynthesis
 from pipeline.nli_verifier import NliResult, apply_nli_to_synthesis
-from pipeline.prompt_schemas import SynthesisFact, SynthesisOutput
+from pipeline.prompt_schemas import SynthesisOutput
 
 logger = logging.getLogger(__name__)
 

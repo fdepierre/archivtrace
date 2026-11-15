@@ -29,7 +29,7 @@ class _Extractor:
         return True
 
     @property
-    def client(self) -> "_Extractor":
+    def client(self) -> _Extractor:
         return self
 
     def extract(self, query: str, **kwargs: object) -> LlmExtraction:

@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 
 from models import DocumentCandidate, SourceType
 from utils.files import safe_filename
+from utils.html import attr, required_attr
 from utils.strings import collapse_whitespace
 
 NUMELYO_HOST = "numelyo.bm-lyon.fr"
@@ -97,12 +98,12 @@ def parse_rows_per_page(html: str) -> int | None:
     soup = BeautifulSoup(html, "lxml")
     next_link = soup.find("a", class_="pageSuiv")
     if next_link and next_link.get("href"):
-        match = re.search(r"rows=(\d+)", next_link["href"], re.IGNORECASE)
+        match = re.search(r"rows=(\d+)", required_attr(next_link, "href"), re.IGNORECASE)
         if match:
             return int(match.group(1))
     page_form = soup.select_one("form.goToPage")
     if page_form and page_form.get("action"):
-        match = re.search(r"rows=(\d+)", page_form["action"], re.IGNORECASE)
+        match = re.search(r"rows=(\d+)", required_attr(page_form, "action"), re.IGNORECASE)
         if match:
             return int(match.group(1))
     return None
@@ -198,7 +199,7 @@ def parse_results(html: str, *, base_url: str) -> list[DocumentCandidate]:
             entry["preview_url"] = full_url
 
     for anchor in soup.find_all("a", href=True):
-        href = urljoin(base_url, anchor["href"])
+        href = urljoin(base_url, required_attr(anchor, "href"))
         text = collapse_whitespace(anchor.get_text())
         view_match = _F_VIEW_RE.search(href)
         if view_match:
@@ -211,7 +212,7 @@ def parse_results(html: str, *, base_url: str) -> list[DocumentCandidate]:
             press_entries[doc_id]["title"] = text
 
     for img in soup.find_all("img", src=True):
-        src = urljoin(base_url, img["src"])
+        src = urljoin(base_url, required_attr(img, "src"))
         eserv_match = _F_ESERV_RE.search(src)
         if eserv_match:
             record_ref = eserv_match.group(1)
@@ -228,7 +229,7 @@ def parse_results(html: str, *, base_url: str) -> list[DocumentCandidate]:
                 entry["thumbnail_url"] = src
             elif "preview" in src.lower():
                 entry["preview_url"] = src
-            alt = collapse_whitespace(img.get("alt") or "")
+            alt = collapse_whitespace(attr(img, "alt"))
             if alt and not entry["title"]:
                 entry["title"] = alt
             continue
@@ -236,7 +237,7 @@ def parse_results(html: str, *, base_url: str) -> list[DocumentCandidate]:
         if doc_id and doc_id in press_entries:
             if not press_entries[doc_id]["thumbnail_url"]:
                 press_entries[doc_id]["thumbnail_url"] = src
-            alt = collapse_whitespace(img.get("alt") or "")
+            alt = collapse_whitespace(attr(img, "alt"))
             if alt and not press_entries[doc_id]["title"]:
                 press_entries[doc_id]["title"] = alt
 
@@ -255,7 +256,7 @@ def candidates_in_page_order(
 
     for row in soup.select("div.ligne_resultats"):
         for anchor in row.find_all("a", href=True):
-            href = urljoin(base_url, anchor["href"])
+            href = urljoin(base_url, required_attr(anchor, "href"))
             view_match = _F_VIEW_RE.search(href)
             if view_match:
                 record_ref = view_match.group(1).rstrip("/")

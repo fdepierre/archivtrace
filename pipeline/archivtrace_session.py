@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
-from pathlib import Path
-
 from dataclasses import replace
+from pathlib import Path
+from typing import Any
 
 from config import Config
 from connectors import build_connector
@@ -362,7 +362,8 @@ def _ensure_local_file(source: object, http: HttpClient, download_dir: Path) -> 
     if dest is None:
         connector = getattr(source, "connector", None) or "wikipedia"
         doc_id = getattr(source, "document_id", None) or "document"
-        dest = download_dir / connector / f"{doc_id}.bin"
+        dest = Path(download_dir / connector / f"{doc_id}.bin")
+    assert dest is not None
     if _file_ready(dest):
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -405,7 +406,7 @@ def _model_name(lane: AnalysisLane | None) -> str:
     return str(model or "llm")
 
 
-def _skip_known(connector: object, known_ids: set[str]) -> None:
+def _skip_known(connector: Any, known_ids: set[str]) -> None:
     original = connector.search
 
     def search(query: str) -> list:

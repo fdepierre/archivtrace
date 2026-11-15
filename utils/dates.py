@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def now() -> datetime:
     """Timezone-aware current time (UTC)."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def today_slug(moment: datetime | None = None) -> str:

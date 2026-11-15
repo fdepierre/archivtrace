@@ -20,7 +20,6 @@ from config import Config
 from models import (
     DocumentCandidate,
     DownloadResult,
-    DocumentStatus,
     ResolvedDocument,
 )
 from strategies.base import DownloadStrategy
@@ -33,7 +32,8 @@ class Connector(ABC):
     """Abstract source connector."""
 
     name: ClassVar[str] = "base"
-    root_source: ClassVar[str] = ""
+    # Overridden per instance by configurable connectors (catalog_html, wikipedia)
+    root_source: str = ""
 
     def __init__(self, http: HttpClient, config: Config) -> None:
         """Attach HTTP client, config, and build the strategy chain."""

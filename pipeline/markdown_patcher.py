@@ -4,37 +4,20 @@
 
 from __future__ import annotations
 
-
-
 import re
 
-
-
 from models import LlmExtraction
-
 from pipeline.markdown_format import (
-
     EXCERPTS_HEADING,
-
-    LLM_HEADING,
-
     LLM_COUNT_RE,
-
+    LLM_HEADING,
     NEXT_SUBSECTION_RE,
-
     SOURCE_INDEX_RE,
-
     SOURCE_SPLIT_RE,
-
     SUMMARY_HEADING,
-
     format_llm_section,
-
     llm_count_line,
-
 )
-
-
 
 # Re-export for callers that imported from this module.
 

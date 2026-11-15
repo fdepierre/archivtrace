@@ -3,28 +3,26 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
-
-from pathlib import Path
 
 from pipeline.grounded_claims import (
     GroundedClaimForSynthesis,
     collect_grounded_claims,
 )
 from pipeline.markdown_reader import ParsedCollection, ParsedSource
+from pipeline.prompt_loader import load_prompt
 from pipeline.prompt_schemas import (
     PromptValidationError,
     validate_synthesis_output,
 )
-from pipeline.prompt_loader import load_prompt
-from pipeline.synthesizer import SynthesisResult, Synthesizer
 from pipeline.synthesis_structure import (
     SourceRecord,
-    StructuredSynthesisData,
     build_source_catalog,
 )
+from pipeline.synthesizer import SynthesisResult, Synthesizer
 
 
 def _claim(**kwargs) -> GroundedClaimForSynthesis:
@@ -216,7 +214,7 @@ def test_rochecardon_prudent_render_no_toxique(tmp_path):
         body=body,
         llm_backend="test",
         model="test",
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
         references=[("Garnis insalubres", "https://example.test/25", "archives_rhone")],
         connectors="archives_rhone",
         source_count=1,

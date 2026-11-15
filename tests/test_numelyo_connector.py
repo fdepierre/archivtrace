@@ -5,8 +5,7 @@ from __future__ import annotations
 from config import Config
 from connectors.numelyo import NumelyoConnector
 from connectors.numelyo.parsing import illustration_preview_url, parse_doc_ref
-from models import SourceType
-from models import DocumentCandidate
+from models import DocumentCandidate, SourceType
 from utils.http import HttpClient
 
 # Aliases used in assertions below.

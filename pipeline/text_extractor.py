@@ -11,8 +11,8 @@ Design goals:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from models import ExtractedPage, ExtractedText
 from pipeline.ocr_extractor import OcrExtractor
@@ -172,7 +172,7 @@ class TextExtractor:
             return None
         pages: list[ExtractedPage] = []
         with fitz.open(path) as doc:
-            for index, page in enumerate(doc, start=1):
+            for index, page in enumerate(doc.pages(), start=1):
                 pages.append(ExtractedPage(number=index, text=page.get_text("text") or ""))
         return pages
 

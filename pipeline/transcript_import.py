@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from models import (
@@ -128,8 +128,16 @@ def build_document(path: Path, matcher: KeywordMatcher) -> CollectedDocument:
     )
 
 
+def _identity(doc: CollectedDocument) -> tuple[str, Path]:
+    """The source id and transcript file of a document made by build_document."""
+    download = doc.download
+    if doc.candidate.document_id is None or download is None or download.local_path is None:
+        raise ValueError(f"not an imported transcript: {doc.candidate.title}")
+    return doc.candidate.document_id, download.local_path
+
+
 def _new_run(query: str, documents: list[CollectedDocument]) -> CollectionRun:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return CollectionRun(
         query=query, run_id=now.strftime("%Y%m%dT%H%M%SZ"), generated_at=now,
         connectors=[CONNECTOR], environment="local", root_source=ROOT_SOURCE,
@@ -200,7 +208,7 @@ def import_transcripts(
         notebook = notebook or research_dir / collecte_filename(query, CONNECTOR)
         notebook.parent.mkdir(parents=True, exist_ok=True)
         notebook.write_text(reporter.render(_new_run(query, documents)), encoding="utf-8")
-        return ImportResult(notebook, added=[d.candidate.document_id for d in documents])
+        return ImportResult(notebook, added=[_identity(d)[0] for d in documents])
 
     text = notebook.read_text(encoding="utf-8")
     parts = SOURCE_SPLIT_RE.split(text)
@@ -216,8 +224,8 @@ def import_transcripts(
     next_index = max(indexes, default=0) + 1
     appended: list[str] = []
     for doc in documents:
-        source_id = doc.candidate.document_id
-        local_file = _local_file_text(doc.download.local_path)
+        source_id, path = _identity(doc)
+        local_file = _local_file_text(path)
         if source_id in by_id:
             i = by_id[source_id]
             current = _TEXT_VERSION_LINE.search(sections[i])

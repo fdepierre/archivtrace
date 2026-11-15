@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from models import (
@@ -72,7 +72,7 @@ def _sample_run() -> CollectionRun:
     return CollectionRun(
         query="valmontagne",
         run_id="test-run",
-        generated_at=datetime(2026, 6, 28, tzinfo=timezone.utc),
+        generated_at=datetime(2026, 6, 28, tzinfo=UTC),
         connectors=["numelyo"],
         environment="local",
         root_source="example.org",

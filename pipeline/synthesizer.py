@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-
+from datetime import UTC, datetime
 from pathlib import Path
 
+from config import DEFAULT_SYNTHESIS_MAX_CHARS
 from pipeline.llm_gateway import DEFAULT_MODEL, LlmGateway, TemplateSynthesizer
 from pipeline.markdown_reader import ParsedCollection, ParsedSource
 from pipeline.prompts import (
     ARTICLE_CONTEXT_PROMPT,
     ARTICLE_CONTEXT_SYSTEM,
-    SYNTHESIZE_CLAIMS_PROMPT,
     SYNTHESIS_SYSTEM,
+    SYNTHESIZE_CLAIMS_PROMPT,
 )
 from pipeline.synthesis_structure import (
     StructuredSynthesisData,
@@ -39,7 +39,6 @@ from pipeline.synthesis_structure import (
     render_web_research_json,
     render_web_research_markdown,
 )
-from config import DEFAULT_SYNTHESIS_MAX_CHARS
 from utils.dates import iso, today_slug
 from utils.files import write_text
 from utils.strings import slugify
@@ -189,7 +188,7 @@ class Synthesizer:
                 body=body,
                 llm_backend="none",
                 model=None,
-                generated_at=datetime.now(timezone.utc),
+                generated_at=datetime.now(UTC),
                 references=refs,
                 connectors=collection.connector,
                 source_count=len(collection.sources),
@@ -218,7 +217,7 @@ class Synthesizer:
                 body=body,
                 llm_backend="template",
                 model=None,
-                generated_at=datetime.now(timezone.utc),
+                generated_at=datetime.now(UTC),
                 references=refs,
                 connectors=collection.connector,
                 source_count=len(collection.sources),
@@ -305,7 +304,7 @@ class Synthesizer:
                     body=body,
                     llm_backend="template",
                     model=None,
-                    generated_at=datetime.now(timezone.utc),
+                    generated_at=datetime.now(UTC),
                     references=refs,
                     connectors=collection.connector,
                     source_count=len(collection.sources),
@@ -355,7 +354,7 @@ class Synthesizer:
                 body=body,
                 llm_backend=backend,
                 model=self.model if backend != "template" else None,
-                generated_at=datetime.now(timezone.utc),
+                generated_at=datetime.now(UTC),
                 references=refs,
                 connectors=collection.connector,
                 source_count=len(collection.sources),
@@ -381,7 +380,7 @@ class Synthesizer:
             body=body,
             llm_backend=backend,
             model=self.model if backend != "template" else None,
-            generated_at=datetime.now(timezone.utc),
+            generated_at=datetime.now(UTC),
             references=refs,
             connectors=collection.connector,
             source_count=len(collection.sources),
@@ -468,7 +467,7 @@ class Synthesizer:
             body=raw_body,
             llm_backend=backend,
             model=self.model if backend != "template" else None,
-            generated_at=datetime.now(timezone.utc),
+            generated_at=datetime.now(UTC),
             references=self._all_references(collection),
             connectors=collection.connector,
             source_count=len(collection.sources),
@@ -821,7 +820,7 @@ class Synthesizer:
         self,
         collection: ParsedCollection,
         catalog: list | None = None,
-    ) -> tuple[str, list[tuple[str, str | None]]]:
+    ) -> tuple[str, list[tuple[str, str | None, str | None]]]:
         """Build the LLM user prompt (grounded v2 for synthese; legacy for contexte)."""
         from pipeline.grounded_claims import (
             collect_grounded_claims,
@@ -855,7 +854,7 @@ class Synthesizer:
         self,
         collection: ParsedCollection,
         catalog: list,
-    ) -> tuple[str, list[tuple[str, str | None]]]:
+    ) -> tuple[str, list[tuple[str, str | None, str | None]]]:
         """Article-context mode: full corpus blocks (backward compatible)."""
         title_limit = 72
         catalog_lines = self._format_catalog_lines(catalog, title_limit=title_limit)

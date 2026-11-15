@@ -6,11 +6,12 @@ No HTTP — BeautifulSoup / regex over HTML strings only.
 from __future__ import annotations
 
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
 
 from models import DocumentCandidate, SourceType
+from utils.html import attr, required_attr
 from utils.strings import collapse_whitespace
 
 HOST = "archives.rhone.fr"
@@ -98,14 +99,14 @@ def _parse_card(item: Tag, *, base_url: str) -> DocumentCandidate | None:
     if title_anchor is None:
         # Fallback: first absolute/relative ark link in the card.
         for anchor in item.select("a[href]"):
-            href = anchor.get("href") or ""
+            href = attr(anchor, "href")
             if _ARK_RE.search(href) and not _MEDIA_UUID_RE.search(href):
                 title_anchor = anchor
                 break
     if title_anchor is None:
         return None
 
-    href = title_anchor.get("href") or ""
+    href = attr(title_anchor, "href")
     notice = notice_url_from_ark(urljoin(base_url, href))
     if not notice:
         return None
@@ -115,10 +116,10 @@ def _parse_card(item: Tag, *, base_url: str) -> DocumentCandidate | None:
 
     title = collapse_whitespace(title_anchor.get_text())
     if not title:
-        title = collapse_whitespace(title_anchor.get("title") or "") or doc_id
+        title = collapse_whitespace(attr(title_anchor, "title")) or doc_id
     if title.lower().startswith("voir la notice"):
         # title attribute form: "Voir la notice complète : TITLE"
-        raw = title_anchor.get("title") or title
+        raw = attr(title_anchor, "title") or title
         if ":" in raw:
             title = collapse_whitespace(raw.split(":", 1)[1])
 
@@ -140,7 +141,7 @@ def _parse_card(item: Tag, *, base_url: str) -> DocumentCandidate | None:
     pdf_url: str | None = None
 
     for anchor in item.select("a[href]"):
-        link = urljoin(base_url, anchor["href"])
+        link = urljoin(base_url, required_attr(anchor, "href"))
         uuid = media_uuid_from_href(link)
         if uuid and media_uuid is None:
             media_uuid = uuid
@@ -150,7 +151,7 @@ def _parse_card(item: Tag, *, base_url: str) -> DocumentCandidate | None:
             pdf_url = pdf
 
     for img in item.select("img[src]"):
-        src = urljoin(base_url, img["src"])
+        src = urljoin(base_url, required_attr(img, "src"))
         thumbnail_url = thumbnail_url or src
         uuid = media_uuid_from_href(src)
         if uuid and media_uuid is None:

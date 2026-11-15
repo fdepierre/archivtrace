@@ -6,6 +6,7 @@ import queue
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from models import ExtractedText, KeywordMatch, LlmExtraction
 
@@ -27,7 +28,7 @@ class AnalysisJob:
 class AnalysisLane:
     """Run LLM extractions one at a time while downloads continue."""
 
-    def __init__(self, extractor: object) -> None:
+    def __init__(self, extractor: Any) -> None:
         self._extractor = extractor
         self._queue: queue.Queue[object] = queue.Queue()
         self._thread = threading.Thread(
@@ -76,6 +77,7 @@ class AnalysisLane:
                 self._inflight += 1
                 self.calls += 1
                 self.max_inflight = max(self.max_inflight, self._inflight)
+            assert isinstance(job, AnalysisJob)
             try:
                 extraction = self._extract(job)
             except Exception as exc:  # noqa: BLE001 - one document must not stop the lane

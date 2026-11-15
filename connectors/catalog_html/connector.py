@@ -28,6 +28,7 @@ from strategies.base import DownloadStrategy
 from strategies.browser_automation import BrowserAutomationStrategy
 from strategies.direct_download import DirectDownloadStrategy
 from strategies.html_scrape import HtmlScrapeStrategy
+from utils.html import attr
 from utils.strings import collapse_whitespace, slugify
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ class CatalogHtmlConnector(Connector):
         candidates: list[DocumentCandidate] = []
 
         for anchor in soup.select(self.result_selector):
-            href = (anchor.get("href") or "").strip()
+            href = attr(anchor, "href").strip()
             if not href or href.startswith("#"):
                 continue
             absolute = urljoin(base_url, href)

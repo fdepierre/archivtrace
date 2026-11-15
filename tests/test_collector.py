@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from config import Config
 from connectors.numelyo import NumelyoConnector
-from models import DocumentCandidate, MatchMode
+from models import DocumentCandidate
 from pipeline.collector import Collector
 from pipeline.markdown_reporter import MarkdownReporter
 from utils.http import HttpClient

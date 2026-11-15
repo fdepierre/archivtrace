@@ -25,6 +25,7 @@ select = ["E", "F", "I", "UP", "B"]
 ignore = [
     "E501",  # line length handled by formatter / docs
     "B008",  # argparse defaults
+    "UP042", # (str, Enum) kept: StrEnum would change str() of the values written to notebooks
 ]
 
 [tool.ruff.lint.per-file-ignores]

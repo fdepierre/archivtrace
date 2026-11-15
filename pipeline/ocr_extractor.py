@@ -41,7 +41,7 @@ class OcrExtractor:
     def is_available(self) -> bool:
         """True when the paddleocr package (and paddle) can be imported."""
         try:
-            import paddleocr  # noqa: F401
+            import paddleocr  # noqa: F401  # pyright: ignore[reportMissingImports]
         except ImportError:
             return False
         return True
@@ -78,7 +78,7 @@ class OcrExtractor:
 
         with fitz.open(path) as doc, tempfile.TemporaryDirectory(prefix="ocr_") as tmp:
             tmp_dir = Path(tmp)
-            for index, page in enumerate(doc, start=1):
+            for index, page in enumerate(doc.pages(), start=1):
                 out = tmp_dir / f"page_{index:04d}.png"
                 page.get_pixmap(matrix=matrix, alpha=False).save(str(out))
                 text, conf = self._ocr_image_path(engine, out)

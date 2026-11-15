@@ -20,12 +20,11 @@ import os
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import requests
 
-from config import Config, DEFAULT_OLLAMA_HOST, DEFAULT_OLLAMA_MODEL
+from config import DEFAULT_OLLAMA_HOST, DEFAULT_OLLAMA_MODEL, Config
 from pipeline.llm_call_log import log_llm_call, setup_llm_call_logger
 
 logger = logging.getLogger(__name__)

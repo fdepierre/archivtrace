@@ -22,12 +22,13 @@ import json
 import logging
 from pathlib import Path
 
-from models import ExtractedPage, ExtractedText, KeywordMatch, LlmExtraction
 from config import DEFAULT_LLM_MAX_CHARS
+from models import ExtractedPage, ExtractedText, KeywordMatch, LlmExtraction
 from pipeline.llm_gateway import LlmGateway
+from pipeline.llm_validation_stats import VALIDATION_STATS
 from pipeline.prompt_schemas import (
-    AnalyzeDocumentResult,
     Affirmation,
+    AnalyzeDocumentResult,
     PromptValidationError,
     extract_json_payload,
     render_analyze_markdown,
@@ -37,7 +38,6 @@ from pipeline.prompts import (
     ANALYZE_DOCUMENT_DESCRIPTIVE_PROMPT,
     ANALYZE_DOCUMENT_PROMPT,
 )
-from pipeline.llm_validation_stats import VALIDATION_STATS
 from utils.strings import truncate
 
 logger = logging.getLogger(__name__)

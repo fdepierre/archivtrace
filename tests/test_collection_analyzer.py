@@ -6,10 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from models import LlmExtraction
 from pipeline.collection_analyzer import CollectionAnalyzer
 from pipeline.llm_gateway import LlmBackend, LlmCompletionResult, LlmGateway
-from pipeline.markdown_reader import ParsedCollection, ParsedSource
+from pipeline.markdown_reader import ParsedCollection
 
 
 class _StubBackend(LlmBackend):

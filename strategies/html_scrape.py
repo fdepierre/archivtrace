@@ -15,6 +15,7 @@ from bs4 import BeautifulSoup
 from models import DownloadResult, ResolvedDocument
 from strategies.base import DownloadStrategy
 from utils.files import safe_filename
+from utils.html import required_attr
 
 # File extensions we consider "downloadable documents".
 _DOC_EXTENSIONS = (".pdf", ".djvu", ".epub", ".tif", ".tiff", ".jp2")
@@ -33,7 +34,7 @@ class HtmlScrapeStrategy(DownloadStrategy):
         """Return the first plausible document link found in `html`."""
         soup = BeautifulSoup(html, "lxml")
         for anchor in soup.find_all("a", href=True):
-            href = anchor["href"].strip()
+            href = required_attr(anchor, "href").strip()
             lowered = href.lower()
             if any(lowered.split("?")[0].endswith(ext) for ext in _DOC_EXTENSIONS):
                 return urljoin(base_url, href)
