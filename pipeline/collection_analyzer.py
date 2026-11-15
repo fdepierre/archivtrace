@@ -46,8 +46,13 @@ class CollectionAnalyzer:
         auto_ocr: bool = False,
         two_pass_extraction: bool = False,
         ocr_lang: str = "fra",
+        cache_dir: Path | None = None,
     ) -> None:
-        """Wire LLM extractor, text extractor, and download directory."""
+        """Wire LLM extractor, text extractor, and download directory.
+
+        ``cache_dir``: where the analysis of each block of a transcript is kept,
+        so an interrupted run resumes (None: no cache).
+        """
         self._extractor = LlmIdeaExtractor(
             client=client,
             max_chars=max_chars,
@@ -62,6 +67,7 @@ class CollectionAnalyzer:
         self.enable_ocr = enable_ocr
         self.auto_ocr = auto_ocr
         self.two_pass_extraction = two_pass_extraction
+        self.cache_dir = cache_dir
 
     def run(
         self,
@@ -185,7 +191,12 @@ class CollectionAnalyzer:
                 continue
 
             matches = matcher.find_in_document(extracted)
-            extraction = self._extractor.extract(
+            transcript = extracted.extractor == "yt2post-transcript"
+            # A transcript is read whole, block by block; other documents around
+            # their keyword hits, within one block
+            analyse = self._extractor.extract_in_blocks if transcript else self._extractor.extract
+            extra = {"cache_dir": self.cache_dir, "refresh": force} if transcript else {}
+            extraction = analyse(
                 collection.query,
                 title=source.title,
                 text=extracted,
@@ -193,8 +204,9 @@ class CollectionAnalyzer:
                 source=source.source_url or source.connector,
                 cote=source.archive_reference or source.document_id,
                 date=source.date,
+                **extra,
             )
-            if extraction.body and extraction.claims and extracted.extractor == "yt2post-transcript":
+            if extraction.body and extraction.claims and transcript:
                 extraction.body = _with_citation_locations(extraction, pdf_path)
             updates[source.index] = extraction
             from pipeline.quality_report import EXTRACTION_QUALITY

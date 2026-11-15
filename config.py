@@ -31,6 +31,10 @@ DEFAULT_USER_AGENT = (
 DEFAULT_LLM_MAX_CHARS = 12_000
 DEFAULT_OLLAMA_TIMEOUT = 600.0
 DEFAULT_OLLAMA_NUM_PREDICT = 1024
+# Ollama loads a model with a small context window (4096 tokens) unless asked:
+# a longer prompt is cut from its start, instructions first. Each request asks
+# for the window its prompt and answer need, up to this many tokens.
+DEFAULT_OLLAMA_NUM_CTX_MAX = 16_384
 # Synthesis needs a longer answer + larger prompt than per-document analyse.
 DEFAULT_SYNTHESIS_NUM_PREDICT = 8192
 DEFAULT_SYNTHESIS_MAX_CHARS = 96_000
@@ -41,6 +45,8 @@ DEFAULT_OUTPUT_DIR = WORK_DIR / "research"
 DEFAULT_DOWNLOAD_DIR = WORK_DIR / "downloads"
 DEFAULT_SYNTHESIS_DIR = WORK_DIR / "synthesys"
 DEFAULT_LLM_LOG_DIR = WORK_DIR / "logs" / "llm"
+# Analysis of each block of a long transcript, so an interrupted analysis resumes
+DEFAULT_ANALYSE_CACHE_DIR = WORK_DIR / "cache" / "analyse"
 DEFAULT_LLM_PROVIDER = "ollama"
 DEFAULT_LLM_LOG_MAX_BYTES = 5_000_000
 DEFAULT_LLM_LOG_BACKUP_COUNT = 10

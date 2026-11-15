@@ -198,3 +198,101 @@ def test_analysis_file_of_an_older_transcription_is_reported(tmp_path):
     _write(tmp_path / "sources", newer)
     result = import_transcripts([tmp_path / "sources"], "Néandertal", research_dir=research)
     assert result.stale_analyses == [analysed]
+
+
+# -- long transcripts: analysis in blocks ------------------------------------------
+
+import re  # noqa: E402
+
+from pipeline.llm_idea_extractor import text_blocks  # noqa: E402
+
+LONG = [{"id": f"s{i:04d}", "start": 20.0 * (i - 1), "end": 20.0 * i,
+         "text": f"Phrase numéro {i} : les outils moustériens de la couche {i} sont décrits. "
+                 + "Le propos détaille ensuite le gisement, ses fouilles, ses archives " * 4}
+        for i in range(1, 91)]  # 30 minutes
+
+
+class _BlockBackend(LlmBackend):
+    """Cites the first numbered sentence of each block it is given."""
+
+    def __init__(self, fail_containing: str | None = None) -> None:
+        self.calls = 0
+        self.fail_containing = fail_containing
+
+    def is_available(self) -> bool:
+        return True
+
+    def generate(self, prompt, *, system=None, max_tokens=None, think=False, temperature=None):
+        self.calls += 1
+        document = prompt.split("<document ", 1)[-1].split("</document>", 1)[0]
+        too_long = len(document) > getattr(self, "fail_when_longer", 10**9)
+        if self.fail_containing and self.fail_containing in prompt and (
+                too_long or not hasattr(self, "fail_when_longer")):
+            return LlmCompletionResult(text="pas du JSON")
+        sentence = re.search(r"Phrase numéro \d+ : [^.]*\.", document).group(0)
+        return LlmCompletionResult(text=json.dumps({
+            "document_status": "ok", "limites": "—",
+            "affirmations": [{"citation_exacte": sentence, "affirmation": sentence,
+                              "theme": "autre", "niveau_confiance": "moyen",
+                              "statut": "confirme_par_le_document"}]}, ensure_ascii=False))
+
+
+def _long_analysis(tmp_path, backend, *, force=False, cache=True):
+    if not (tmp_path / "research").exists():
+        _write(tmp_path / "sources", _source(segments=LONG))
+    notebook = import_transcripts([tmp_path / "sources"], "moustérien",
+                                  research_dir=tmp_path / "research").notebook
+    analyzer = CollectionAnalyzer(
+        client=LlmGateway(backend, provider="stub", model="stub", operation="analyse"),
+        download_dir=tmp_path / "downloads", max_chars=4000,
+        cache_dir=tmp_path / "cache" if cache else None)
+    text, _ = analyzer.run(read_collection(notebook), force=force)
+    return text
+
+
+def test_blocks_cover_the_whole_transcript_with_overlap():
+    passages = transcript_passages(_source(segments=LONG))
+    blocks = text_blocks(passages, 4000)
+    assert len(blocks) > 3
+    assert blocks[0][0] is passages[0] and blocks[-1][-1] is passages[-1]
+    for previous, block in zip(blocks, blocks[1:], strict=False):
+        assert block[0] is previous[-1]  # the boundary passage is read in both blocks
+    assert {p.number for b in blocks for p in b} == {p.number for p in passages}
+
+
+def test_long_video_is_analysed_to_the_end(tmp_path):
+    backend = _BlockBackend()
+    text = _long_analysis(tmp_path, backend)
+    blocks = len(text_blocks(transcript_passages(_source(segments=LONG)), 4000))
+    assert backend.calls == blocks  # one call per block, the whole video read
+    assert f"Analysé en {blocks} blocs." in text
+    located = re.findall(r"- Affirmation \d+ : (\[[^\]]+\]) \(exact\)", text)
+    assert len(located) == blocks
+    assert located[-1].startswith("[2")  # a claim from the last minutes, located there
+
+
+def test_interrupted_analysis_resumes_from_the_cache(tmp_path):
+    _long_analysis(tmp_path, _BlockBackend())
+    again = _BlockBackend()
+    first = _long_analysis(tmp_path, again)
+    assert again.calls == 0  # every block read from the cache
+    forced = _BlockBackend()
+    assert _long_analysis(tmp_path, forced, force=True) == first
+    assert forced.calls > 0  # --force asks the model again
+
+
+def test_failed_block_is_reported_and_others_kept(tmp_path):
+    text = _long_analysis(tmp_path, _BlockBackend(fail_containing="Phrase numéro 30 "), cache=False)
+    assert "NON ANALYSÉ" in text and "bloc(s) non analysé(s)" in text
+    assert "Phrase numéro 1 :" in text  # the other blocks' claims are kept
+
+
+def test_block_with_a_too_long_answer_is_split_in_halves(tmp_path):
+    blocks = len(text_blocks(transcript_passages(_source(segments=LONG)), 4000))
+    # Like an answer cut by the output limit: invalid for a whole block, fine for half
+    backend = _BlockBackend(fail_containing="Phrase numéro 7 ")
+    backend.fail_when_longer = 3000
+    text = _long_analysis(tmp_path, backend, cache=False)
+    assert backend.calls > blocks
+    assert "NON ANALYSÉ" not in text
+    assert "Phrase numéro 7 :" in text or "Phrase numéro 4 :" in text  # the halves analysed

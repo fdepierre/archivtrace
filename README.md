@@ -661,8 +661,8 @@ Test fixture: `tests/fixtures/catalog_results.html`.
 ## Video transcripts (YouTube2Post)
 
 Videos are not searched by a connector: they are transcribed by
-[YouTube2Post](https://github.com/fdepierre/YouTube2Post), which writes one timestamped
-transcript per video (`yt2post-source/1` JSON: video id, title, channel, language,
+[YouTube2Post](https://github.com/fdepierre/YouTube2Post) with its `-j` option
+(`python yt2post.py -t -j <URL>`), which writes one timestamped transcript per video (`yt2post-source/1` JSON: video id, title, channel, language,
 playlists, transcription model and settings, segments with start/end times). That JSON is
 the source of truth for the text; ArchivTrace never copies it into a notebook.
 
@@ -685,9 +685,16 @@ python analyse.py --input work/research/<date>_neandertal_youtube2post_collecte.
 - A video is **secondary evidence** (`preuve_secondaire`): a citation proves the statement
   is made in the video, not that it is established. The transcription is automatic and not
   proofread (`Text quality note`).
-- Long videos: the analysis still reads one sample of `max_chars` characters per source
-  (about 15 min of speech with the default 12000): longer transcripts are only partly
-  analysed for now.
+- A video is read **whole**, in blocks of consecutive passages of at most `llm_max_chars`
+  characters (about 15 min of speech with the default 12000): one model call per block,
+  each block's citations checked against that block, then the claims merged (a citation
+  read twice where two blocks overlap is kept once). A block whose answer is invalid
+  (usually cut by the output limit, `ollama_num_predict`, when the speech is dense) is
+  analysed again as two halves. The analysis says how many blocks were read, and reports a
+  block still failing (`NON ANALYSÉ`) instead of hiding it.
+- Each block's analysis is kept in `work/cache/analyse/`: an interrupted analysis resumes
+  at the first block not done. The same text, model and prompt is never asked twice;
+  `--force` asks the model again.
 
 ## Download strategies
 
@@ -959,6 +966,12 @@ Typed container passed to all components. Main fields:
 | `llm_max_chars` | 12000 | Max text sent to the LLM per document |
 | `ollama_timeout` | 600 | Shared LLM generation timeout (s) |
 | `llm_log_dir` | `work/logs/llm` | Rotating JSONL call logs |
+
+Ollama loads a model with a 4096-token context window unless asked otherwise, and cuts a
+longer prompt from its start (where the instructions are). Each request therefore asks for
+the window its prompt and answer need (`num_ctx`), up to 16384 tokens
+(`config.DEFAULT_OLLAMA_NUM_CTX_MAX`); a longer prompt is logged as a warning. A larger
+window uses more memory: on a small GPU, part of the model may then run on the CPU.
 
 ### Multi-model Ollama (task routing)
 

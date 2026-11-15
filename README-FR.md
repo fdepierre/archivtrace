@@ -665,7 +665,8 @@ Fixture de test : `tests/fixtures/catalog_results.html`.
 ## Transcriptions de vidéos (YouTube2Post)
 
 Les vidéos ne sont pas cherchées par un connecteur : elles sont transcrites par
-[YouTube2Post](https://github.com/fdepierre/YouTube2Post), qui écrit une transcription
+[YouTube2Post](https://github.com/fdepierre/YouTube2Post) avec son option `-j`
+(`python yt2post.py -t -j <URL>`), qui écrit une transcription
 horodatée par vidéo (JSON `yt2post-source/1` : identifiant, titre, chaîne, langue,
 playlists, modèle et réglages de transcription, segments avec début et fin). Ce JSON est la
 référence du texte ; ArchivTrace ne le recopie jamais dans un carnet.
@@ -690,9 +691,17 @@ python analyse.py --input work/research/<date>_neandertal_youtube2post_collecte.
 - Une vidéo est une **preuve secondaire** (`preuve_secondaire`) : une citation prouve que le
   propos y est tenu, pas qu'il est établi. La transcription est automatique et non relue
   (`Text quality note`).
-- Vidéos longues : l'analyse ne lit encore qu'un échantillon de `max_chars` caractères par
-  source (environ 15 min de parole avec la valeur par défaut de 12000) ; les transcriptions
-  plus longues ne sont pour l'instant analysées qu'en partie.
+- Une vidéo est lue **en entier**, par blocs de passages consécutifs d'au plus
+  `llm_max_chars` caractères (environ 15 min de parole avec la valeur par défaut de 12000) :
+  un appel au modèle par bloc, les citations de chaque bloc vérifiées dans ce bloc, puis les
+  affirmations fusionnées (une citation lue deux fois là où deux blocs se chevauchent n'est
+  gardée qu'une fois). Un bloc dont la réponse est invalide (en général coupée par la
+  limite de sortie, `ollama_num_predict`, quand la parole est dense) est réanalysé en deux
+  moitiés. L'analyse indique le nombre de blocs lus et signale un bloc encore en échec
+  (`NON ANALYSÉ`) au lieu de le taire.
+- L'analyse de chaque bloc est conservée dans `work/cache/analyse/` : une analyse
+  interrompue reprend au premier bloc non fait. Le même texte avec le même modèle et le même
+  prompt n'est jamais redemandé ; `--force` interroge à nouveau le modèle.
 
 ## Stratégies de téléchargement
 
@@ -955,6 +964,13 @@ Conteneur typé passé à tous les composants. Principaux champs :
 | `llm_max_chars` | 12000 | Texte max envoyé à la LLM par document |
 | `ollama_timeout` | 600 | Timeout unique de génération LLM (s) |
 | `llm_log_dir` | `work/logs/llm` | Logs JSONL rotatifs des appels |
+
+Ollama charge un modèle avec une fenêtre de contexte de 4096 tokens, sauf demande contraire,
+et coupe un prompt plus long par le début (là où sont les instructions). Chaque requête
+demande donc la fenêtre dont son prompt et sa réponse ont besoin (`num_ctx`), jusqu'à 16384
+tokens (`config.DEFAULT_OLLAMA_NUM_CTX_MAX`) ; un prompt plus long est signalé par un
+avertissement. Une fenêtre plus grande utilise plus de mémoire : sur un petit GPU, une partie
+du modèle peut alors tourner sur le processeur.
 
 ### Multi-modèles Ollama (routage par tâche)
 

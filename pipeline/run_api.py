@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from config import (
+    DEFAULT_ANALYSE_CACHE_DIR,
     DEFAULT_CONNECTOR,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_SYNTHESIS_DIR,
@@ -785,6 +786,7 @@ def run_analyse(
         auto_ocr=cfg.auto_ocr,
         two_pass_extraction=cfg.two_pass_extraction,
         ocr_lang=cfg.ocr_lang,
+        cache_dir=DEFAULT_ANALYSE_CACHE_DIR,
     )
     EXTRACTION_QUALITY.reset()
     VALIDATION_STATS.reset()

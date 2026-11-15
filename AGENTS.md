@@ -62,7 +62,8 @@ Before running or debugging CLI commands, prefer this file (`AGENTS.md`) and
 `import_sources.py` / `pipeline/transcript_import.py` declare YouTube2Post transcripts
 (`yt2post-source/1` JSON, source of truth for the text and timestamps) as notebook sources;
 `pipeline/transcript_source.py` reads them as timestamped passages and locates citations in
-the segments (computed, never asked to the LLM). Citation grounding uses the source text only
+the segments (computed, never asked to the LLM). A transcript is analysed whole, block by
+block (`LlmIdeaExtractor.extract_in_blocks`, cache in `work/cache/analyse/`). Citation grounding uses the source text only
 (`pipeline/source_text.py`), never the LLM analysis. Videos are `preuve_secondaire`. Data
 lineage: `docs/DATA_LINEAGE.md`.
 

@@ -7,13 +7,22 @@ mandatory verbatim citations (prompt ``analyze_document``).
 Optional second pass (``two_pass_extraction``) uses
 ``analyze_document_descriptive`` when the strict pass yields no confirmed
 claims — those results stay ``statut=insuffisant`` (tier C / hypotheses).
+
+A transcript is analysed whole, in consecutive blocks of passages that fit the
+character budget (``extract_in_blocks``): one LLM call per block, each block's
+citations validated against that block's text, the claims then merged. Each
+block's result can be cached, so an interrupted analysis resumes where it
+stopped.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+from pathlib import Path
 
-from models import ExtractedText, KeywordMatch, LlmExtraction
+from models import ExtractedPage, ExtractedText, KeywordMatch, LlmExtraction
 from config import DEFAULT_LLM_MAX_CHARS
 from pipeline.llm_gateway import LlmGateway
 from pipeline.prompt_schemas import (
@@ -40,6 +49,40 @@ def _unit_label(page) -> str:
 
     label = passage_label(page)
     return f"[Passage {label[1:-1]}]" if label else f"[Page {page.number}]"
+
+
+def text_blocks(pages: list[ExtractedPage], max_chars: int) -> list[list[ExtractedPage]]:
+    """
+    Consecutive passages grouped into blocks whose labelled text fits
+    ``max_chars``. Each block after the first starts with the last passage of
+    the previous one, so a statement spanning the boundary is read whole once.
+    """
+    def size(page: ExtractedPage) -> int:
+        return len(_unit_label(page)) + len(page.text) + 3
+
+    blocks: list[list[ExtractedPage]] = []
+    block: list[ExtractedPage] = []
+    used = 0
+    for page in pages:
+        if block and used + size(page) > max_chars:
+            blocks.append(block)
+            overlap = block[-1]
+            block, used = ([overlap], size(overlap)) if size(overlap) + size(page) <= max_chars else ([], 0)
+        block.append(page)
+        used += size(page)
+    if block:
+        blocks.append(block)
+    return blocks
+
+
+def _block_label(block: list[ExtractedPage]) -> str:
+    """'[00:00–14:52]' for transcript passages, 'pages 3–7' otherwise."""
+    from pipeline.transcript_source import time_range
+
+    first, last = block[0], block[-1]
+    if first.start_seconds is not None and last.end_seconds is not None:
+        return time_range(first.start_seconds, last.end_seconds)
+    return f"pages {first.number}–{last.number}"
 
 
 class LlmIdeaExtractor:
@@ -69,8 +112,13 @@ class LlmIdeaExtractor:
         source: str | None = None,
         cote: str | None = None,
         date: str | None = None,
+        whole_text: bool = False,
     ) -> LlmExtraction:
-        """Run LLM extraction; never raises into the pipeline."""
+        """Run LLM extraction; never raises into the pipeline.
+
+        ``whole_text``: send all the pages given (one block of a transcript),
+        not only the pages around keyword hits.
+        """
         if not self.client.is_available():
             return LlmExtraction(
                 body="",
@@ -78,7 +126,7 @@ class LlmIdeaExtractor:
                 error=f"LLM indisponible ({self.client.provider})",
                 skipped=True,
             )
-        sample = self._build_sample(text, matches)
+        sample = self._build_sample(text, matches, whole_text=whole_text)
         if not sample.strip():
             return LlmExtraction(
                 body="",
@@ -206,6 +254,117 @@ class LlmIdeaExtractor:
                 error=f"{type(exc).__name__}: {exc}",
                 prompt_version=self.prompt.version,
             )
+
+    def extract_in_blocks(
+        self,
+        query: str,
+        *,
+        title: str,
+        text: ExtractedText,
+        matches: list[KeywordMatch],
+        source: str | None = None,
+        cote: str | None = None,
+        date: str | None = None,
+        cache_dir: Path | None = None,
+        refresh: bool = False,
+    ) -> LlmExtraction:
+        """
+        Analyse the whole text, block by block (one LLM call each), and merge
+        the claims. A block already analysed with the same model, prompt and
+        text is read from ``cache_dir`` instead of asking the model again,
+        unless ``refresh`` (the new answer then replaces the cached one).
+        """
+        blocks = text_blocks(text.pages, self.max_chars)
+        results: list[tuple[str, LlmExtraction]] = []
+        pending = list(blocks)
+        number = 0
+        while pending:
+            block = pending.pop(0)
+            number += 1
+            label = _block_label(block)
+            if len(blocks) > 1 or number > 1:
+                logger.info("%s — bloc %d/%d %s", title, number, number + len(pending), label)
+            pages = {p.number for p in block}
+            block_text = ExtractedText(pages=block, extractor=text.extractor,
+                                       quality_note=text.quality_note)
+            block_matches = [m for m in matches if m.page in pages]
+            key = self._cache_key(query, title, block_text)
+            extraction = None if refresh else _cache_read(cache_dir, key)
+            if extraction is None:
+                extraction = self.extract(query, title=title, text=block_text,
+                                          matches=block_matches, source=source,
+                                          cote=cote, date=date, whole_text=True)
+                if extraction.claims is not None:
+                    _cache_write(cache_dir, key, extraction)
+            if extraction.claims is None and extraction.needs_review and len(block) > 1:
+                # Usually an answer cut by the output limit: too many claims
+                # for one call. Analyse the two halves instead (sharing their
+                # boundary passage when there are more than two).
+                half = len(block) // 2
+                logger.warning("%s — bloc %s : réponse invalide, analysé en deux moitiés",
+                               title, label)
+                first = block[:half + 1] if len(block) > 2 else block[:half]
+                pending[:0] = [first, block[half:]]
+                continue
+            results.append((label, extraction))
+        if len(results) == 1:
+            return results[0][1]
+        return self._merge_blocks(results)
+
+    def _cache_key(self, query: str, title: str, block: ExtractedText) -> str:
+        """Same model, prompt, subject and text: the same analysis."""
+        payload = json.dumps({
+            "model": self.client.model, "prompt": self.prompt.version,
+            "descriptive": self.two_pass_extraction, "query": query, "title": title,
+            "text": self._build_sample(block, [], whole_text=True),
+        }, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def _merge_blocks(self, results: list[tuple[str, LlmExtraction]]) -> LlmExtraction:
+        """One analysis from the blocks' analyses; failed blocks are reported."""
+        analysed = [(label, r) for label, r in results if r.claims is not None]
+        failed = [(label, r) for label, r in results if r.claims is None]
+        if not analysed:
+            first = failed[0][1]
+            first.error = f"{len(failed)} bloc(s) non analysé(s) — {first.error}"
+            return first
+        merged: list[Affirmation] = []
+        seen: set[str] = set()
+        limites = [f"Analysé en {len(results)} blocs."]
+        for label, result in analysed:
+            parsed = AnalyzeDocumentResult.model_validate(result.claims)
+            for claim in parsed.affirmations:
+                key = (claim.citation_exacte or "").casefold().strip()
+                if key and key in seen:
+                    continue  # the same citation read twice in the overlap
+                seen.add(key)
+                merged.append(claim)
+            if parsed.limites and parsed.limites.strip() not in {"", "—", "-"}:
+                limites.append(f"{label} : {parsed.limites.strip()}")
+        for label, result in failed:
+            limites.append(f"{label} : NON ANALYSÉ ({result.error or 'échec'})")
+        confirmed = any(a.statut == "confirme_par_le_document" for a in merged)
+        combined = AnalyzeDocumentResult(
+            document_status="ok" if confirmed and not failed else "a_revoir_manuellement",
+            affirmations=merged,
+            limites=" | ".join(limites),
+        )
+        needs_review = combined.document_status == "a_revoir_manuellement"
+        if failed:
+            error = f"À revoir manuellement — {len(failed)} bloc(s) non analysé(s)"
+        elif not confirmed:
+            error = "À revoir manuellement — aucune affirmation confirmée"
+        else:
+            error = None
+        return LlmExtraction(
+            body=render_analyze_markdown(combined),
+            model=self.client.model,
+            needs_review=needs_review,
+            error=error,
+            prompt_version=self.prompt.version,
+            claims=combined.model_dump(),
+            raw_response="\n\n".join(r.raw_response or "" for _, r in results),
+        )
 
     def _run_descriptive_pass(
         self,
@@ -351,12 +510,18 @@ class LlmIdeaExtractor:
             matches_block=matches_block,
         )
 
-    def _build_sample(self, text: ExtractedText, matches: list[KeywordMatch]) -> str:
+    def _build_sample(
+        self, text: ExtractedText, matches: list[KeywordMatch], *, whole_text: bool = False
+    ) -> str:
         """Prioritise keyword hits, then cap total length.
 
         Mechanical excerpts are prepended so the model cites text that is
-        guaranteed to be present in the validated sample.
+        guaranteed to be present in the validated sample. With ``whole_text``,
+        every page is sent with its label (the excerpts are already in it).
         """
+        if whole_text:
+            body = "\n\n".join(f"{_unit_label(page)}\n{page.text}" for page in text.pages)
+            return body[: self.max_chars]
         lead_parts: list[str] = []
         if matches:
             lead_parts.append("[Passages mécaniques prioritaires]")
@@ -384,3 +549,31 @@ class LlmIdeaExtractor:
             body = "\n\n".join(chunks) if chunks else text.full_text
 
         return (lead + body)[: self.max_chars] if lead else body[: self.max_chars]
+
+
+def _cache_read(cache_dir: Path | None, key: str) -> LlmExtraction | None:
+    """A block analysis saved by a previous run, if any."""
+    if cache_dir is None:
+        return None
+    path = cache_dir / f"{key}.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return LlmExtraction(**data)
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _cache_write(cache_dir: Path | None, key: str, extraction: LlmExtraction) -> None:
+    """Save a block analysis, so an interrupted run does not ask it again."""
+    if cache_dir is None:
+        return
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    data = {
+        "body": extraction.body, "model": extraction.model, "error": extraction.error,
+        "skipped": extraction.skipped, "needs_review": extraction.needs_review,
+        "prompt_version": extraction.prompt_version, "claims": extraction.claims,
+        "raw_response": extraction.raw_response,
+    }
+    tmp = cache_dir / f"{key}.tmp"
+    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(cache_dir / f"{key}.json")

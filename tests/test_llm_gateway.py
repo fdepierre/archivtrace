@@ -142,3 +142,30 @@ def test_log_llm_call_payload_shape(tmp_path: Path):
     )
     assert payload["provider"] == "perplexity"
     assert "ts" in payload
+
+
+def test_ollama_context_window_fits_prompt_and_answer(caplog):
+    from config import DEFAULT_OLLAMA_NUM_CTX_MAX
+    from pipeline.llm_gateway import OLLAMA_MIN_NUM_CTX, context_window
+
+    assert context_window("court", None, 512) == OLLAMA_MIN_NUM_CTX
+    # A 12,000-character block with its prompt: more than Ollama's 4096 default
+    window = context_window("x" * 18_000, "système", 2048)
+    assert window >= 18_000 // 3 + 2048 and window % 1024 == 0
+    assert not caplog.records
+    assert context_window("x" * 200_000, None, 8192) == DEFAULT_OLLAMA_NUM_CTX_MAX
+    assert "cut its start" in caplog.text  # never silently truncated
+
+
+def test_ollama_backend_sends_the_context_window():
+    from unittest.mock import MagicMock
+
+    from pipeline.llm_gateway import OllamaBackend
+
+    backend = OllamaBackend.__new__(OllamaBackend)
+    backend.model = "m"
+    backend._service = MagicMock()
+    backend._service.generate.return_value = "{}"
+    backend.generate("x" * 18_000, system="s", max_tokens=2048)
+    options = backend._service.generate.call_args.kwargs["options"]
+    assert options["num_ctx"] > 4096 and options["num_predict"] == 2048

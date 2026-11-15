@@ -92,6 +92,32 @@ class LlmBackend(ABC):
         return None
 
 
+# Ollama's own default window, used when a request needs less
+OLLAMA_MIN_NUM_CTX = 4096
+# Conservative estimate for French text and JSON (real ratio is about 3.5-4)
+CHARS_PER_TOKEN = 3
+
+
+def context_window(prompt: str, system: str | None, max_tokens: int | None) -> int:
+    """
+    The context window (num_ctx) a request needs: its prompt and its answer,
+    rounded up to 1024 tokens, at least Ollama's default and at most
+    DEFAULT_OLLAMA_NUM_CTX_MAX. Above that the prompt will be cut: say so.
+    """
+    from config import DEFAULT_OLLAMA_NUM_CTX_MAX
+
+    needed = (len(prompt) + len(system or "")) // CHARS_PER_TOKEN + (max_tokens or 1024) + 256
+    window = max(OLLAMA_MIN_NUM_CTX, -(-needed // 1024) * 1024)
+    if window > DEFAULT_OLLAMA_NUM_CTX_MAX:
+        logger.warning(
+            "Prompt of about %d tokens: above the %d-token context window, "
+            "Ollama will cut its start (lower llm_max_chars / synthesis_max_chars)",
+            needed, DEFAULT_OLLAMA_NUM_CTX_MAX,
+        )
+        window = DEFAULT_OLLAMA_NUM_CTX_MAX
+    return window
+
+
 class OllamaBackend(LlmBackend):
     """Local Ollama via shared ``OllamaService``."""
 
@@ -132,7 +158,7 @@ class OllamaBackend(LlmBackend):
         think: bool = False,
         temperature: float | None = None,
     ) -> LlmCompletionResult:
-        options: dict[str, Any] = {}
+        options: dict[str, Any] = {"num_ctx": context_window(prompt, system, max_tokens)}
         if max_tokens:
             options["num_predict"] = max_tokens
         if temperature is not None:
