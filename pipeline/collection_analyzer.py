@@ -8,7 +8,7 @@ from pathlib import Path
 
 from config import DEFAULT_LLM_MAX_CHARS
 from models import LlmExtraction
-from pipeline.analyse_policy import should_process
+from pipeline.analyse_policy import ProcessDecision, should_process
 from pipeline.keyword_matcher import KeywordMatcher
 from pipeline.llm_gateway import LlmGateway
 from pipeline.llm_idea_extractor import LlmIdeaExtractor
@@ -77,11 +77,17 @@ class CollectionAnalyzer:
         skip_existing: bool = True,
         force: bool = False,
         output_path: Path | None = None,
+        limit: int | None = None,
+        only_sources: set[str] | None = None,
     ) -> tuple[str, AnalyzeStats]:
         """Return patched Markdown text and run statistics.
 
         When ``output_path`` is set, the file is updated after each source so a
         long run can be resumed with ``--skip-existing``.
+
+        ``limit``: at most this many sources are analysed on this run (a long
+        playlist is analysed in several runs). ``only_sources``: only the
+        sources with these numbers or document ids.
         """
         stats = AnalyzeStats(sources_total=len(collection.sources))
         skip_existing = skip_existing and not force
@@ -104,6 +110,12 @@ class CollectionAnalyzer:
                 only_matches=only_matches,
                 enable_ocr=self.enable_ocr or self.auto_ocr,
             )
+            if decision.process and only_sources is not None and not (
+                {str(source.index), source.document_id or ""} & only_sources
+            ):
+                decision = ProcessDecision(False, "hors sélection (--source), ignorée")
+            if decision.process and limit is not None and processed >= limit:
+                decision = ProcessDecision(False, "limite atteinte (--limit), reportée")
             if not decision.process:
                 stats.sources_skipped += 1
                 stats.messages.append(f"{label}: {decision.reason}")

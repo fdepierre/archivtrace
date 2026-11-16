@@ -63,7 +63,11 @@ Before running or debugging CLI commands, prefer this file (`AGENTS.md`) and
 (`yt2post-source/1` JSON, source of truth for the text and timestamps) as notebook sources;
 `pipeline/transcript_source.py` reads them as timestamped passages and locates citations in
 the segments (computed, never asked to the LLM). A transcript is analysed whole, block by
-block (`LlmIdeaExtractor.extract_in_blocks`, cache in `work/cache/analyse/`). Citation grounding uses the source text only
+block (`LlmIdeaExtractor.extract_in_blocks`, cache in `work/cache/analyse/`). YouTube2Post playlist records
+(`yt2post-playlist/1`) list each video's state; `pipeline/playlist_status.py` derives
+where each video stands (`import_sources.py --status`, read only), and
+`transcript_import.sync_analysis_file` brings new or re-transcribed videos into an existing
+`_analyse_<model>.md` before `analyse.py` runs. Citation grounding uses the source text only
 (`pipeline/source_text.py`), never the LLM analysis. Videos are `preuve_secondaire`. Data
 lineage: `docs/DATA_LINEAGE.md`.
 

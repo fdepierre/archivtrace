@@ -10,9 +10,15 @@ Examples
         → work/research/{date}_neandertal_youtube2post_collecte.md
     python analyse.py --input work/research/{date}_neandertal_youtube2post_collecte.md
 
+    python import_sources.py --input ../YouTube2Post/work/sources/youtube/playlists/Prehistoire_PL....json
+        → the transcribed videos of the playlist, research subject: its title
+    python import_sources.py --status --input ../YouTube2Post/work/sources/youtube/playlists/Prehistoire_PL....json
+        → where each video stands: not transcribed, to import, to analyse, analysed...
+
 Importing again is safe: unchanged videos are left as they are, new videos are
 added, and a new transcription of a video replaces the previous one and is
-reported so that its analysis can be redone.
+reported so that its analysis can be redone. The next ``analyse.py`` run brings
+them into its existing analysis file and analyses them.
 """
 
 from __future__ import annotations
@@ -22,7 +28,13 @@ import sys
 from pathlib import Path
 
 from config import DEFAULT_OUTPUT_DIR
-from pipeline.transcript_import import find_transcripts, import_transcripts
+from pipeline.playlist_status import analysis_file, collect_status, format_status, next_steps
+from pipeline.transcript_import import (
+    existing_notebook,
+    find_playlists,
+    find_transcripts,
+    import_transcripts,
+)
 from pipeline.transcript_source import load_transcript
 
 
@@ -34,8 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--input", type=Path, nargs="+", required=True,
-        help="Transcript JSON files, or folders searched for them "
-             "(e.g. YouTube2Post's work/sources/youtube).",
+        help="Transcript JSON files, YouTube2Post playlist records, or folders "
+             "searched for them (e.g. YouTube2Post's work/sources/youtube).",
     )
     parser.add_argument(
         "--query", default=None,
@@ -51,11 +63,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--research-dir", type=Path, default=DEFAULT_OUTPUT_DIR,
         help="Folder of the research notebooks (default: work/research).",
     )
+    parser.add_argument(
+        "--status", action="store_true",
+        help="Only show where each video stands (transcription, import, analysis); "
+             "write nothing.",
+    )
     return parser
 
 
 def _default_query(paths: list[Path]) -> str | None:
-    """The playlist title of the first transcript found, if any."""
+    """The title of the playlist record given, else of the first transcript's playlist."""
+    for _, record in find_playlists(paths):
+        if record.get("title"):
+            return record["title"]
     files = find_transcripts(paths)
     for file in files:
         for playlist in load_transcript(file).get("playlists") or []:
@@ -71,6 +91,11 @@ def main(argv: list[str] | None = None) -> int:
         print("No --query given and the videos are not in a playlist: give the research "
               "subject with --query.", file=sys.stderr)
         return 2
+    if not args.query:
+        print(f'Research subject: "{query}" (the playlist\'s title; the analysis keeps what '
+              "relates to it: give a real subject with --query)")
+    if args.status:
+        return _status(args, query)
     try:
         result = import_transcripts(args.input, query, research_dir=args.research_dir,
                                     notebook=args.output)
@@ -86,6 +111,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  analysis made on an older transcription: {path}")
     if result.added or result.updated:
         print(f"Next: python analyse.py --input {result.notebook}")
+    return 0
+
+
+def _status(args: argparse.Namespace, query: str) -> int:
+    notebook = args.output or existing_notebook(args.research_dir, query)
+    rows = collect_status(args.input, notebook)
+    print(f"Notebook: {notebook if notebook and notebook.exists() else '(none yet)'}")
+    if notebook and notebook.exists() and analysis_file(notebook) != notebook:
+        print(f"Analysis file: {analysis_file(notebook)}")
+    print(format_status(rows))
+    for step in next_steps(rows, notebook if notebook and notebook.exists() else None, args.input):
+        print(f"Next: {step}")
     return 0
 
 

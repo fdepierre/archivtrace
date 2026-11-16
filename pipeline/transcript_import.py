@@ -19,6 +19,7 @@ Videos are identified by their source id (``youtube:<id>``), never by title.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -42,12 +43,15 @@ from pipeline.markdown_format import (
     SOURCE_INDEX_RE,
     SOURCE_SPLIT_RE,
     format_pending_llm_section,
+    section_body,
 )
 from pipeline.markdown_reporter import MarkdownReporter
 from pipeline.text_extractor import TextExtractor
-from pipeline.transcript_source import is_transcript_source, load_transcript
+from pipeline.transcript_source import is_transcript_source, load_transcript, read_json
 from utils.research_paths import collecte_filename
 from utils.strings import keyword_variants, slugify
+
+logger = logging.getLogger(__name__)
 
 CONNECTOR = "youtube2post"
 ROOT_SOURCE = "youtube.com (transcriptions YouTube2Post)"
@@ -72,15 +76,51 @@ class ImportResult:
     stale_analyses: list[Path] = field(default_factory=list)
 
 
+PLAYLIST_SCHEMA = "yt2post-playlist/1"
+
+
+def load_playlist(path: Path) -> dict | None:
+    """A YouTube2Post playlist record (yt2post-playlist/1), or None for another file."""
+    if path.suffix.lower() != ".json":
+        return None
+    try:
+        data = read_json(path)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("schema") != PLAYLIST_SCHEMA:
+        return None
+    return data
+
+
+def find_playlists(paths: list[Path]) -> list[tuple[Path, dict]]:
+    """The playlist records given or found in the given folders."""
+    files: list[Path] = []
+    for path in paths:
+        files.extend(sorted(path.rglob("*.json")) if path.is_dir() else [path])
+    return [(f, data) for f in files if (data := load_playlist(f)) is not None]
+
+
+def playlist_source_file(record_path: Path, video: dict) -> Path | None:
+    """The transcript file of a video of a playlist record, if it was transcribed."""
+    if video.get("state") != "transcribed" or not video.get("source"):
+        return None
+    path = (record_path.parent / video["source"]).resolve()
+    return path if path.exists() else None
+
+
 def find_transcripts(paths: list[Path]) -> list[Path]:
     """
-    The transcript files given or found in the given folders. When a video
-    has several versions, only the most recently collected one is kept.
+    The transcript files given, found in the given folders, or listed by the
+    given playlist records. When a video has several versions, only the most
+    recently collected one is kept.
     """
     files: list[Path] = []
     for path in paths:
         if path.is_dir():
             files.extend(sorted(path.rglob("*.json")))
+        elif (record := load_playlist(path)) is not None:
+            files.extend(f for v in record.get("videos") or []
+                         if (f := playlist_source_file(path, v)) is not None)
         else:
             files.append(path)
     latest: dict[str, tuple[str, Path]] = {}
@@ -178,14 +218,27 @@ def _obsolete(section: str, old_version: str) -> str:
     return section[:start] + block + "\n\n" + section[end:].lstrip("\n")
 
 
+def _last(pattern: re.Pattern[str], section: str) -> re.Match[str] | None:
+    """
+    The last match in a source section. The analysis written by the model comes
+    before the section's own metadata, and is untrusted text: a line of it that
+    looks like a field ("- Text version: ...") must not be taken for the field.
+    """
+    matches = list(pattern.finditer(section))
+    return matches[-1] if matches else None
+
+
+def _set_last(pattern: re.Pattern[str], section: str, line: str) -> str:
+    match = _last(pattern, section)
+    return section[:match.start()] + line + section[match.end():] if match else section
+
+
 def _update_section(section: str, doc: CollectedDocument, local_file: str) -> str:
     version = doc.candidate.raw_metadata["text_version"]
-    old = _TEXT_VERSION_LINE.search(section)
-    # A function, not a template: a Windows path (C:\Users\...) holds backslashes
-    section = _LOCAL_FILE_LINE.sub(lambda _: f"- Local file: {local_file}", section, count=1)
-    if old:
-        section = _TEXT_VERSION_LINE.sub(lambda _: f"- Text version: {version}", section, count=1)
-    return _obsolete(section, old.group(1) if old else "")
+    old = _last(_TEXT_VERSION_LINE, section)
+    section = _set_last(_LOCAL_FILE_LINE, section, f"- Local file: {local_file}")
+    section = _set_last(_TEXT_VERSION_LINE, section, f"- Text version: {version}")
+    return _obsolete(section, old.group(1).strip() if old else "")
 
 
 def import_transcripts(
@@ -229,7 +282,7 @@ def import_transcripts(
         local_file = _local_file_text(path)
         if source_id in by_id:
             i = by_id[source_id]
-            current = _TEXT_VERSION_LINE.search(sections[i])
+            current = _last(_TEXT_VERSION_LINE, sections[i])
             if current and current.group(1).strip() == doc.candidate.raw_metadata["text_version"]:
                 result.unchanged.append(source_id)
                 continue
@@ -264,7 +317,7 @@ def _stale_analyses(notebook: Path, documents: list[CollectedDocument],
     stale = []
     for path in sorted(notebook.parent.glob(f"{notebook.stem}_analyse_*.md")):
         for section in SOURCE_SPLIT_RE.split(path.read_text(encoding="utf-8"))[1:]:
-            doc_id, version = _DOC_ID_LINE.search(section), _TEXT_VERSION_LINE.search(section)
+            doc_id, version = _DOC_ID_LINE.search(section), _last(_TEXT_VERSION_LINE, section)
             if (doc_id and version and doc_id.group(1).strip() in current
                     and version.group(1).strip() != current[doc_id.group(1).strip()]):
                 stale.append(path)
@@ -272,11 +325,109 @@ def _stale_analyses(notebook: Path, documents: list[CollectedDocument],
     return stale
 
 
+_COUNT_LABELS = ("Sources trouvées", "Sources retenues", "Documents résolus",
+                 "Documents téléchargés", "Documents avec texte extrait")
+
+
 def _bump_counts(head: str, added: int) -> str:
     """Add the new sources to the summary counts of the notebook header."""
-    for label in ("Sources trouvées", "Sources retenues", "Documents résolus",
-                  "Documents téléchargés", "Documents avec texte extrait"):
+    for label in _COUNT_LABELS:
         head = re.sub(rf"^(- {label}: )(\d+)$",
                       lambda m: f"{m.group(1)}{int(m.group(2)) + added}", head,
                       count=1, flags=re.MULTILINE)
     return head
+
+
+# -- keeping an analysis file in step with its notebook ---------------------
+
+
+def split_sections(text: str) -> tuple[str, list[str], str]:
+    """Header, source sections, and the closing sections after the last source."""
+    parts = SOURCE_SPLIT_RE.split(text)
+    head, sections = parts[0], parts[1:]
+    tail = ""
+    if sections:
+        cut = sections[-1].find(_IGNORED_HEADING)
+        if cut >= 0:
+            sections[-1], tail = sections[-1][:cut], sections[-1][cut:]
+    return head, sections, tail
+
+
+def section_identity(section: str) -> tuple[int | None, str | None, str | None]:
+    """
+    Index, document id and text version written in a source section. The id
+    is read before the model's analysis and the version after it (see _last).
+    """
+    index, doc_id, version = (SOURCE_INDEX_RE.search(section), _DOC_ID_LINE.search(section),
+                              _last(_TEXT_VERSION_LINE, section))
+    return (int(index.group(1)) if index else None,
+            doc_id.group(1).strip() if doc_id else None,
+            version.group(1).strip() if version else None)
+
+
+def _with_body(section: str, body: str) -> str:
+    """The section with this LLM block body instead of its own."""
+    start = section.find(LLM_HEADING)
+    if start < 0:
+        return section
+    body_start = start + len(LLM_HEADING)
+    nxt = NEXT_SUBSECTION_RE.search(section, body_start)
+    end = nxt.start() if nxt else len(section)
+    return section[:body_start] + "\n" + body + "\n\n" + section[end:].lstrip("\n")
+
+
+def sync_analysis_file(notebook: Path, analysis: Path) -> list[str]:
+    """
+    Bring into an analysis file (``analyse.py`` output, a copy of the notebook)
+    the videos imported into the notebook since it was made:
+
+    - a source of the notebook missing from the analysis file is added, not analysed;
+    - a source whose transcript changed (another text version) takes the
+      notebook's section; its previous analysis is kept below the obsolete
+      heading, and it is analysed again;
+    - any other source keeps its analysis.
+
+    Only for notebooks imported from YouTube2Post, whose sources keep their
+    number. Returns the source ids added or updated (nothing written if none).
+    """
+    if not analysis.exists() or analysis.resolve() == notebook.resolve():
+        return []
+    note_head, note_sections, _ = split_sections(notebook.read_text(encoding="utf-8"))
+    if f"- Connector(s): {CONNECTOR}" not in note_head:
+        return []
+    head, sections, tail = split_sections(analysis.read_text(encoding="utf-8"))
+    by_index = {section_identity(s)[0]: i for i, s in enumerate(sections)}
+    changed: list[str] = []
+    for section in note_sections:
+        index, doc_id, version = section_identity(section)
+        if index is None or doc_id is None:
+            continue
+        if index not in by_index:
+            sections.append(section)
+            changed.append(doc_id)
+            continue
+        i = by_index[index]
+        _, old_id, old_version = section_identity(sections[i])
+        if old_id != doc_id:
+            logger.warning("%s: source %d is %s in the notebook but %s in the analysis file; "
+                           "left as it is", analysis.name, index, doc_id, old_id)
+            continue
+        if old_version == version:
+            continue
+        old_body = section_body(sections[i], LLM_HEADING).strip()
+        if OBSOLETE_HEADING not in section and old_body and old_body != LLM_PENDING_TEXT:
+            section = _obsolete(_with_body(section, old_body), old_version or "")
+        sections[i] = section
+        changed.append(doc_id)
+    if not changed:
+        return []
+    sections.sort(key=lambda s: section_identity(s)[0] or 0)
+    for label in _COUNT_LABELS:  # the notebook's counts of sources
+        m = re.search(rf"^- {label}: \d+$", note_head, re.MULTILINE)
+        if m:
+            head = re.sub(rf"^- {label}: \d+$", lambda _, line=m.group(0): line, head,
+                          count=1, flags=re.MULTILINE)
+    if sections and not sections[-1].endswith("\n\n"):
+        sections[-1] = sections[-1].rstrip("\n") + "\n\n"
+    analysis.write_text(head + "".join(sections) + tail, encoding="utf-8")
+    return changed

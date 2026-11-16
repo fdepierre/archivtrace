@@ -680,8 +680,10 @@ python analyse.py --input work/research/<date>_neandertal_youtube2post_collecte.
   s0003, s0004`. This location is computed from the segments, never asked to the model.
 - Importing again is idempotent: an unchanged video is left as it is (with its analysis), a
   new video is appended, and a new transcription replaces the file; its previous analysis is
-  kept under `### Analyse obsolète` and the source goes back to "not analysed". Analysis files
-  (`…_analyse_<model>.md`) made on an older transcription are reported.
+  kept under `### Analyse obsolète` and the source goes back to "not analysed". The next
+  `analyse.py` run brings the new videos and the new transcriptions into its existing
+  analysis file (`…_analyse_<model>.md`) and analyses only them; the other videos keep
+  their analysis.
 - A video is **secondary evidence** (`preuve_secondaire`): a citation proves the statement
   is made in the video, not that it is established. The transcription is automatic and not
   proofread (`Text quality note`).
@@ -695,6 +697,43 @@ python analyse.py --input work/research/<date>_neandertal_youtube2post_collecte.
 - Each block's analysis is kept in `work/cache/analyse/`: an interrupted analysis resumes
   at the first block not done. The same text, model and prompt is never asked twice;
   `--force` asks the model again.
+
+### A whole playlist
+
+With `-j`, YouTube2Post keeps the state of each video of a playlist in
+`work/sources/youtube/playlists/<Title>_<playlist_id>.json` (transcribed, failed, not done
+yet). Give that file to import the playlist's transcribed videos (subject: the playlist
+title), and to see where each video stands:
+
+```bash
+python yt2post.py -t -j -p separate <playlist link>                # in YouTube2Post
+python import_sources.py --input ../YouTube2Post/work/sources/youtube/playlists/Prehistoire_PLx.json
+python analyse.py --input work/research/<date>_prehistoire_youtube2post_collecte.md
+python import_sources.py --status --input ../YouTube2Post/work/sources/youtube/playlists/Prehistoire_PLx.json
+```
+
+A long playlist is done in several runs, on both sides: `yt2post.py -n 10` transcribes
+the next 10 videos not done yet, `analyse.py --limit 5` analyses the next 5 sources not
+analysed yet, and `analyse.py --source 3` (its number, or `--source youtube:<id>`) only
+that one. Without `--query`, the subject is the playlist's title: the analysis keeps what
+relates to the subject, so give a real one (`--query "Néandertal"`).
+
+`--status` writes nothing. It shows one line per video, in the playlist's order, then
+the command for the next step:
+
+```
+  1. analysed                              Néandertal, qui était-il ?
+  2. to analyse again (new transcription)  Les outils moustériens
+  3. transcription failed                  La grotte Chauvet (Video unavailable)
+  4. not transcribed                       Lucy
+```
+
+The states are: `not transcribed`, `transcription failed`, `to import`, `new
+transcription to import`, `to analyse`, `to analyse again (new transcription)`, `analysis
+failed`, `analysed, to review` (a block not analysed, or an answer to check), `ignored`,
+and `analysed`. They are read from the files each time (record, transcripts, notebook,
+latest analysis file), never stored. The same works with a folder (`--input
+../YouTube2Post/work/sources/youtube`) or transcript files, without the playlist's order.
 
 ## Download strategies
 

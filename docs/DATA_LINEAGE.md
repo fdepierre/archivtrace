@@ -10,6 +10,7 @@ layer is authoritative, every other form is derived from it, in one direction.
 |---|---|---|---|
 | Downloaded documents (PDF, images, pages) | the source (archives, libraries) | the file in `work/downloads/` | extracted text, keyword excerpts in the notebook |
 | Video transcripts (segments, timestamps, metadata) | YouTube2Post (machine) | its `yt2post-source/1` JSON | passages read by `analyse.py`, excerpts in the notebook |
+| State of each video of a playlist (transcribed, failed, pending) | YouTube2Post | its `yt2post-playlist/1` record | `import_sources.py --status` (computed each time, never stored) |
 | Claims extracted from a source | the LLM, then checked by code | the validated JSON block in the notebook's `### Idées extraites (LLM)` | syntheses |
 | Where a citation is in a transcript | code (`pipeline/transcript_source.py`) | the `#### Localisation des citations` lines under the analysis | — |
 | Syntheses and writing contexts | the LLM, then a person | the Markdown in `work/synthesys/` | — |
@@ -44,3 +45,7 @@ work/synthesys/…_synthese.md
 - **Versions.** A transcript is identified by its source id (`youtube:<id>`) and its text
   version (a fingerprint). A new version makes the analyses of the previous one obsolete; they
   are kept, marked as such, never silently reused.
+- **One way.** The notebook follows the transcripts (`import_sources.py`), and an existing
+  analysis file follows the notebook (new or re-transcribed videos are brought in before
+  `analyse.py` runs); nothing flows back. The status of a video is derived from these files,
+  never kept in a file of its own.

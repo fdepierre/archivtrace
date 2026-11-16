@@ -27,12 +27,26 @@ class TranscriptSourceError(ValueError):
     """The file is not a valid yt2post-source transcript."""
 
 
+# Parsed files, by (path, modification time, size): a playlist is hundreds of
+# files of about 1 MB, each asked for several times by one command
+_PARSED: dict[tuple[str, int, int], Any] = {}
+
+
+def read_json(path: Path) -> Any:
+    """The parsed JSON file, read once as long as it does not change. Not to be modified."""
+    stat = path.stat()
+    key = (str(path.resolve()), stat.st_mtime_ns, stat.st_size)
+    if key not in _PARSED:
+        _PARSED[key] = json.loads(path.read_text(encoding="utf-8"))
+    return _PARSED[key]
+
+
 def is_transcript_source(path: Path) -> bool:
     """True for a YouTube2Post transcript file (checked by content, not name)."""
     if path.suffix.lower() != ".json":
         return False
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
     except (OSError, ValueError):
         return False
     return isinstance(data, dict) and data.get("schema") == SCHEMA
@@ -41,7 +55,7 @@ def is_transcript_source(path: Path) -> bool:
 def load_transcript(path: Path) -> dict[str, Any]:
     """Read and check a transcript source; raise TranscriptSourceError if invalid."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
     except (OSError, ValueError) as exc:
         raise TranscriptSourceError(f"{path}: {exc}") from exc
     if not isinstance(data, dict) or data.get("schema") != SCHEMA:

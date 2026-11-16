@@ -301,7 +301,7 @@ def _extract_sources(text: str) -> list[ParsedSource]:
 
         status = _field(part, _STATUS_RE)
 
-        local_raw = _field(part, _LOCAL_FILE_RE)
+        local_raw = _last_field(part, _LOCAL_FILE_RE)
 
         local_file = Path(local_raw) if local_raw and local_raw != "—" else None
 
@@ -313,13 +313,13 @@ def _extract_sources(text: str) -> list[ParsedSource]:
 
         source_type = _field(part, _SOURCE_TYPE_RE)
 
-        date = _field(part, _DOC_DATE_RE)
+        date = _last_field(part, _DOC_DATE_RE)
 
-        author = _field(part, _DOC_AUTHOR_RE)
+        author = _last_field(part, _DOC_AUTHOR_RE)
 
-        collection_label = _field(part, _DOC_COLLECTION_RE)
+        collection_label = _last_field(part, _DOC_COLLECTION_RE)
 
-        archive_reference = _field(part, _ARCHIVE_REF_RE)
+        archive_reference = _last_field(part, _ARCHIVE_REF_RE)
 
         sources.append(
 
@@ -387,6 +387,17 @@ def _best_url(part: str) -> str | None:
 
 
 
+
+
+def _last_field(part: str, pattern: re.Pattern[str]) -> str | None:
+    """
+    A field written after the LLM analysis in a source section: its last
+    occurrence. The analysis is untrusted text placed before it; a line of it
+    shaped like the field (e.g. ``- Local file: ...``, which names the file the
+    analysis reads) must never be taken for the field.
+    """
+    matches = pattern.findall(part)
+    return matches[-1].strip() if matches else None
 
 
 def _field(part: str, pattern: re.Pattern[str]) -> str | None:

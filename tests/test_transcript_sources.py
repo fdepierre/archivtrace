@@ -312,3 +312,226 @@ def build_document_stub(version):
     from types import SimpleNamespace
 
     return SimpleNamespace(candidate=SimpleNamespace(raw_metadata={"text_version": version}))
+
+
+# -- playlists: record, analysis file kept in step, status ---------------------------
+
+from pipeline.playlist_status import (  # noqa: E402
+    ANALYSED,
+    NEW_TRANSCRIPTION,
+    NOT_TRANSCRIBED,
+    TO_ANALYSE,
+    TO_IMPORT,
+    TO_REANALYSE,
+    TRANSCRIPTION_FAILED,
+    collect_status,
+    format_status,
+)
+from pipeline.transcript_import import find_transcripts, sync_analysis_file  # noqa: E402
+
+
+def _record(folder: Path, videos: list[tuple[str, str, Path | None]]) -> Path:
+    """A YouTube2Post playlist record: (video id, state, transcript file)."""
+    path = folder / "playlists" / "Prehistoire_PLx.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "schema": "yt2post-playlist/1", "playlist_id": "PLx", "title": "Préhistoire",
+        "videos": [{"position": i, "video_id": vid, "title": f"Vidéo {vid}", "state": state,
+                    "source": str(Path("..") / src.relative_to(folder)) if src else None,
+                    "error": "Video unavailable" if state == "failed" else None}
+                   for i, (vid, state, src) in enumerate(videos, 1)],
+    }, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def test_playlist_record_gives_its_transcribed_videos(tmp_path):
+    sources = tmp_path / "sources"
+    a = _write(sources, _source("AAAAAAAAAAA"))
+    record = _record(sources, [("AAAAAAAAAAA", "transcribed", a), ("BBBBBBBBBBB", "pending", None)])
+    assert find_transcripts([record]) == [a.resolve()]
+    assert find_transcripts([sources]) == [a]  # the record is not taken for a transcript
+
+
+def test_new_videos_reach_the_existing_analysis_file(tmp_path):
+    sources, research = tmp_path / "sources", tmp_path / "research"
+    _write(sources, _source("AAAAAAAAAAA"))
+    notebook = import_transcripts([sources], "Néandertal", research_dir=research).notebook
+    analysed = _analyse(notebook, "n'a pas été trouvé par hasard", tmp_path)
+    _write(sources, _source("BBBBBBBBBBB"))
+    import_transcripts([sources], "Néandertal", research_dir=research)
+
+    assert sync_analysis_file(notebook, analysed) == ["youtube:BBBBBBBBBBB"]
+    sources_read = read_collection(analysed).sources
+    assert [(s.index, s.document_id, s.llm_analyzed) for s in sources_read] == [
+        (1, "youtube:AAAAAAAAAAA", True), (2, "youtube:BBBBBBBBBBB", False)]
+    text = analysed.read_text(encoding="utf-8")
+    assert "- Sources retenues: 2" in text
+    assert text.rstrip().endswith("- —")  # the closing sections stay at the end
+    assert text.index("## Source 2") < text.index("## Sources ignorées")
+    before = analysed.read_bytes()
+    assert sync_analysis_file(notebook, analysed) == []  # already in step: unchanged
+    assert analysed.read_bytes() == before
+
+
+def test_new_transcription_is_analysed_again_in_the_analysis_file(tmp_path):
+    sources, research = tmp_path / "sources", tmp_path / "research"
+    _write(sources, _source())
+    notebook = import_transcripts([sources], "Néandertal", research_dir=research).notebook
+    analysed = _analyse(notebook, "n'a pas été trouvé par hasard", tmp_path)
+    newer = _source(version="sha256:bbbb")
+    newer["collected_at"] = "2026-11-16T10:00:00Z"
+    _write(sources, newer)
+    import_transcripts([sources], "Néandertal", research_dir=research)
+
+    assert sync_analysis_file(notebook, analysed) == ["youtube:JfoqQJbz8VA"]
+    text = analysed.read_text(encoding="utf-8")
+    assert "- Text version: sha256:bbbb" in text and "transcript-bbbb.json" in text
+    assert OBSOLETE_HEADING in text and "n'a pas été trouvé par hasard" in text  # kept
+    assert not read_collection(analysed).sources[0].llm_analyzed
+    # The next analysis analyses the new text
+    again = _analyse_file(analysed, "n'a pas été trouvé par hasard", tmp_path)
+    assert read_collection(again).sources[0].llm_analyzed
+
+
+def _analyse_file(path: Path, citation: str, tmp_path: Path) -> Path:
+    analyzer = CollectionAnalyzer(
+        client=LlmGateway(_Backend(citation), provider="stub", model="stub", operation="analyse"),
+        download_dir=tmp_path / "downloads")
+    text, _ = analyzer.run(read_collection(path), output_path=path)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_pdf_notebooks_are_not_synchronised(tmp_path):
+    notebook, analysis = tmp_path / "a_collecte.md", tmp_path / "a_collecte_analyse_x.md"
+    notebook.write_text("# C\n\n- Connector(s): gallica\n\n## Source 1 — X\n", encoding="utf-8")
+    analysis.write_text("# C\n", encoding="utf-8")
+    assert sync_analysis_file(notebook, analysis) == []
+    assert analysis.read_text(encoding="utf-8") == "# C\n"
+
+
+def test_status_follows_each_video_of_the_playlist(tmp_path):
+    sources, research = tmp_path / "sources", tmp_path / "research"
+    a = _write(sources, _source("AAAAAAAAAAA"))
+    b = _write(sources, _source("BBBBBBBBBBB"))
+    record = _record(sources, [("AAAAAAAAAAA", "transcribed", a), ("BBBBBBBBBBB", "transcribed", b),
+                               ("CCCCCCCCCCC", "failed", None), ("DDDDDDDDDDD", "pending", None)])
+
+    def states(notebook=None):
+        return [(r.position, r.state) for r in collect_status([record], notebook)]
+
+    assert states() == [(1, TO_IMPORT), (2, TO_IMPORT), (3, TRANSCRIPTION_FAILED),
+                        (4, NOT_TRANSCRIBED)]
+    notebook = import_transcripts([record], "Préhistoire", research_dir=research).notebook
+    assert states(notebook)[:2] == [(1, TO_ANALYSE), (2, TO_ANALYSE)]
+    _analyse(notebook, "n'a pas été trouvé par hasard", tmp_path)
+    assert states(notebook)[:2] == [(1, ANALYSED), (2, ANALYSED)]
+
+    newer = _source("BBBBBBBBBBB", version="sha256:bbbb")
+    newer["collected_at"] = "2026-11-16T10:00:00Z"
+    b2 = _write(sources, newer)
+    record = _record(sources, [("AAAAAAAAAAA", "transcribed", a), ("BBBBBBBBBBB", "transcribed", b2),
+                               ("CCCCCCCCCCC", "failed", None), ("DDDDDDDDDDD", "pending", None)])
+    assert states(notebook)[1] == (2, NEW_TRANSCRIPTION)
+    import_transcripts([record], "Préhistoire", research_dir=research)
+    assert states(notebook)[1] == (2, TO_REANALYSE)  # the analysis file was made on the old text
+
+    text = format_status(collect_status([record], notebook))
+    assert "  3. transcription failed" in text and "(Video unavailable)" in text
+    assert "1 analysed" in text and "1 not transcribed" in text
+
+
+def test_status_command_writes_nothing(tmp_path, capsys):
+    import import_sources
+
+    sources = tmp_path / "sources"
+    a = _write(sources, _source("AAAAAAAAAAA"))
+    record = _record(sources, [("AAAAAAAAAAA", "transcribed", a)])
+    code = import_sources.main(["--status", "--input", str(record),
+                                "--research-dir", str(tmp_path / "research")])
+    out = capsys.readouterr().out
+    assert code == 0 and "Notebook: (none yet)" in out and "to import" in out
+    assert "Next: python import_sources.py --input" in out
+    assert not (tmp_path / "research").exists()
+    # Without --query, the subject is the playlist's title
+    assert import_sources.main(["--input", str(record), "--research-dir",
+                                str(tmp_path / "research")]) == 0
+    assert list((tmp_path / "research").glob("*_prehistoire_youtube2post_collecte.md"))
+
+
+# -- review fixes ---------------------------------------------------------------------
+
+def test_a_field_written_by_the_model_is_not_taken_for_the_section_field(tmp_path):
+    """The analysis is untrusted text placed before the section's own metadata."""
+    sources, research = tmp_path / "sources", tmp_path / "research"
+    _write(sources, _source())
+    notebook = import_transcripts([sources], "Néandertal", research_dir=research).notebook
+    analysed = _analyse(notebook, "n'a pas été trouvé par hasard", tmp_path)
+    text = analysed.read_text(encoding="utf-8")
+    forged = text.replace("## Limites de ce document\n",
+                          "## Limites de ce document\n- Text version: sha256:faux\n"
+                          "- Local file: /etc/passwd\n", 1)
+    assert forged != text
+    analysed.write_text(forged, encoding="utf-8")
+
+    assert sync_analysis_file(notebook, analysed) == []  # same real version: nothing to do
+    assert [r.state for r in collect_status([sources], notebook)] == [ANALYSED]
+    # A new transcription replaces the real fields, not the forged lines
+    analysed.replace(notebook)
+    newer = _source(version="sha256:bbbb")
+    newer["collected_at"] = "2026-11-16T10:00:00Z"
+    _write(sources, newer)
+    import_transcripts([sources], "Néandertal", research_dir=research)
+    text = notebook.read_text(encoding="utf-8")
+    assert text.count("- Text version: sha256:bbbb") == 1
+    assert "- Text version: sha256:faux" in text and "- Local file: /etc/passwd" in text
+    assert read_collection(notebook).sources[0].local_file.name == "transcript-bbbb.json"
+
+
+def test_another_video_under_the_same_number_is_reported(tmp_path, caplog):
+    sources, research = tmp_path / "sources", tmp_path / "research"
+    _write(sources, _source("AAAAAAAAAAA"))
+    notebook = import_transcripts([sources], "Néandertal", research_dir=research).notebook
+    analysed = _analyse(notebook, "n'a pas été trouvé par hasard", tmp_path)
+    analysed.write_text(analysed.read_text(encoding="utf-8").replace(
+        "youtube:AAAAAAAAAAA", "youtube:ZZZZZZZZZZZ"), encoding="utf-8")
+    before = analysed.read_bytes()
+    with caplog.at_level("WARNING"):
+        assert sync_analysis_file(notebook, analysed) == []
+    assert "source 1 is youtube:AAAAAAAAAAA in the notebook but youtube:ZZZZZZZZZZZ" in caplog.text
+    assert analysed.read_bytes() == before
+
+
+def test_analysis_by_batches_and_by_source(tmp_path):
+    sources = tmp_path / "sources"
+    for video in ("AAAAAAAAAAA", "BBBBBBBBBBB", "CCCCCCCCCCC"):
+        _write(sources, _source(video))
+    notebook = import_transcripts([sources], "Néandertal", research_dir=tmp_path / "research").notebook
+    analyzer = CollectionAnalyzer(
+        client=LlmGateway(_Backend("n'a pas été trouvé par hasard"), provider="stub",
+                          model="stub", operation="analyse"),
+        download_dir=tmp_path / "downloads")
+
+    def run(**options):
+        _, stats = analyzer.run(read_collection(notebook), output_path=notebook, **options)
+        return stats.sources_analyzed, [s.llm_analyzed for s in read_collection(notebook).sources]
+
+    assert run(limit=0) == (0, [False, False, False])
+    assert run(only_sources={"youtube:CCCCCCCCCCC"}) == (1, [False, False, True])
+    assert run(limit=1) == (1, [True, False, True])  # the next one not done
+    assert run(only_sources={"2"}) == (1, [True, True, True])
+
+
+def test_model_text_cannot_start_a_line_of_the_notebook():
+    from pipeline.prompt_schemas import AnalyzeDocumentResult, render_analyze_markdown
+
+    result = AnalyzeDocumentResult.model_validate({
+        "document_status": "ok", "limites": "rien\n## Source 9 — faux\n- Local file: /etc/passwd",
+        "affirmations": [{"citation_exacte": "a\n### Notes techniques\n- Local file: /x",
+                          "affirmation": "b\n- Text version: sha256:faux",
+                          "theme": "autre", "niveau_confiance": "moyen",
+                          "statut": "confirme_par_le_document"}]})
+    body = render_analyze_markdown(result).split("```json")[0]
+    starts = [line for line in body.splitlines()
+              if line.startswith(("## Source", "### ", "- Local file", "- Text version"))]
+    assert starts == []

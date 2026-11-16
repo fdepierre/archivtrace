@@ -79,6 +79,21 @@ def build_parser() -> argparse.ArgumentParser:
             "(when they differ) and ignore --skip-existing."
         ),
     )
+    intention.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Analyse at most N sources on this run, in order (run again for the "
+             "next ones; 0: only bring the notebook's new sources into the analysis file).",
+    )
+    intention.add_argument(
+        "--source",
+        action="append",
+        metavar="ID",
+        help="Analyse only this source: its number in the notebook or its document "
+             "id (e.g. 3 or youtube:JfoqQJbz8VA). Can be repeated.",
+    )
     advanced.add_argument(
         "--llm",
         choices=["ollama", "openai", "openrouter", "perplexity", "none"],
@@ -209,6 +224,8 @@ def main(argv: list[str] | None = None) -> int:
         skip_existing=bool(args.skip_existing),
         force=bool(args.force),
         llm_provider=args.llm,
+        limit=args.limit,
+        only_sources=set(args.source) if args.source else None,
     ).exit_code
 
 

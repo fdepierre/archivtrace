@@ -664,6 +664,8 @@ def run_analyse(
     skip_existing: bool = True,
     force: bool = False,
     llm_provider: str | None = None,
+    limit: int | None = None,
+    only_sources: set[str] | None = None,
 ) -> RunResult:
     """Run per-document LLM analysis using cfg policies."""
     from pipeline.collection_analyzer import CollectionAnalyzer, load_collection
@@ -762,6 +764,11 @@ def run_analyse(
     if work_path != input_path:
         logger.info("Source collection: %s", input_path)
         logger.info("Analysis file: %s", work_path)
+        from pipeline.transcript_import import sync_analysis_file
+
+        # Videos imported since the analysis file was made (new, or a new transcription)
+        for source_id in sync_analysis_file(input_path, work_path):
+            logger.info("New or re-transcribed since the last analysis: %s", source_id)
 
     collection = load_collection(work_path)
     pending = sum(1 for s in collection.sources if s.llm_status == "pending")
@@ -799,6 +806,8 @@ def run_analyse(
         skip_existing=skip_existing,
         force=force,
         output_path=work_path,
+        limit=limit,
+        only_sources=only_sources,
     )
 
     analyzer.write(patched, work_path)

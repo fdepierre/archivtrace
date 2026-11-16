@@ -796,6 +796,16 @@ def validate_classify_response(text: str) -> ClassifySourceResult:
         raise PromptValidationError(f"Schema invalid: {exc}", raw=text) from exc
 
 
+def _one_line(text: str | None) -> str:
+    """
+    Model text on one line. The analysis is written inside a notebook read back
+    by line patterns ("## Source 3 — ", "- Local file: ..."): a line break in a
+    model string must not let it start a line that looks like one of them. The
+    JSON block below keeps the strings as they are (escaped by JSON).
+    """
+    return " ".join((text or "").split())
+
+
 def render_analyze_markdown(result: AnalyzeDocumentResult) -> str:
     """Human Markdown (legacy headings) + embedded JSON for synthesis."""
     confirmed = [
@@ -808,7 +818,7 @@ def render_analyze_markdown(result: AnalyzeDocumentResult) -> str:
     if confirmed:
         for claim in confirmed:
             lines.append(
-                f"- [{claim.theme} / {claim.niveau_confiance}] {claim.affirmation}"
+                f"- [{claim.theme} / {claim.niveau_confiance}] {_one_line(claim.affirmation)}"
             )
     else:
         lines.append("- _(aucune affirmation confirmée par le document)_")
@@ -816,7 +826,7 @@ def render_analyze_markdown(result: AnalyzeDocumentResult) -> str:
     lines.extend(["", "## Passages citables"])
     if confirmed:
         for claim in confirmed:
-            lines.append(f'> "{claim.citation_exacte}"')
+            lines.append(f'> "{_one_line(claim.citation_exacte)}"')
     else:
         lines.append("- _(pas de citation confirmée)_")
 
@@ -830,7 +840,7 @@ def render_analyze_markdown(result: AnalyzeDocumentResult) -> str:
             ),
             "",
             "## Limites de ce document",
-            result.limites or "—",
+            _one_line(result.limites) or "—",
             "",
             "## Affirmations structurées (JSON)",
             "```json",
