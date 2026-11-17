@@ -854,6 +854,8 @@ def run_analyse(
         two_pass_extraction=cfg.two_pass_extraction,
         ocr_lang=cfg.ocr_lang,
         cache_dir=DEFAULT_ANALYSE_CACHE_DIR,
+        max_claims=cfg.transcript_max_claims,
+        block_chars=cfg.transcript_block_chars,
     )
     EXTRACTION_QUALITY.reset()
     VALIDATION_STATS.reset()

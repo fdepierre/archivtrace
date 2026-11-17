@@ -728,14 +728,36 @@ python analyse.py --input work/research/<date>_neandertal_youtube2post_collecte.
 - Une vidéo est une **preuve secondaire** (`preuve_secondaire`) : une citation prouve que le
   propos y est tenu, pas qu'il est établi. La transcription est automatique et non relue
   (`Text quality note`).
-- Une vidéo est lue **en entier**, par blocs de passages consécutifs d'au plus
-  `llm_max_chars` caractères (environ 15 min de parole avec la valeur par défaut de 12000) :
-  un appel au modèle par bloc, les citations de chaque bloc vérifiées dans ce bloc, puis les
-  affirmations fusionnées (une citation lue deux fois là où deux blocs se chevauchent n'est
-  gardée qu'une fois). Un bloc dont la réponse est invalide (en général coupée par la
-  limite de sortie, `ollama_num_predict`, quand la parole est dense) est réanalysé en deux
-  moitiés. L'analyse indique le nombre de blocs lus et signale un bloc encore en échec
-  (`NON ANALYSÉ`) au lieu de le taire.
+- Une vidéo est lue **en entier**, par blocs d'environ 6 minutes de parole
+  (`transcript_block_chars`, 6000 caractères) : un appel au modèle par bloc, les citations
+  de chaque bloc vérifiées dans ce bloc, puis les affirmations fusionnées (une citation lue
+  deux fois là où deux blocs se chevauchent n'est gardée qu'une fois).
+- On demande à chaque bloc **ses affirmations principales, quel que soit le sujet de
+  recherche** : faits, datations, définitions, hypothèses, références. Le sujet et le titre
+  de la vidéo sont donnés comme contexte, jamais comme filtre : une conférence est analysée
+  de sa première à sa dernière minute. Le sujet sert ensuite à trier et à rédiger la synthèse.
+- La réponse est bornée : au plus `transcript_max_claims` affirmations par bloc (6), chaque
+  champ de longueur limitée. Avec Ollama, ces bornes sont données sous forme de schéma JSON
+  et imposées pendant l'écriture de la réponse : elle ne peut plus être coupée par la limite
+  de sortie ni être un JSON invalide. Une réponse coupée malgré tout (autre fournisseur)
+  n'est pas redemandée : le bloc est tout de suite analysé en deux moitiés, et cette décision
+  est gardée en cache. L'analyse indique le nombre de blocs lus et signale un bloc encore en
+  échec (`NON ANALYSÉ`) au lieu de le taire.
+- Une citation est **exacte** quand ses mots sont ceux de la transcription, dans le même
+  ordre ; la casse et la ponctuation ne comptent pas (Whisper devine la ponctuation). Une
+  citation reformulée par le modèle est quand même localisée, et marquée `(fuzzy)`.
+- **Quel modèle.** Mesuré sur un PC avec un GPU de 6 Go, sur trois conférences de la
+  playlist du Musée de l'Homme (32, 77 et 83 min) :
+
+  | Modèle | Durée pour la conférence de 32 min | Citations exactes | À utiliser pour |
+  |---|---|---|---|
+  | `qwen3.5` (9B, par défaut) | 11 min 24 s | 90 % | quelques vidéos, quand l'exactitude compte le plus |
+  | `qwen3.5:4b` | 1 min 42 s (3 conférences, 3 h 12 : 11 min 40 s) | 69 à 81 % | une playlist entière ; vérifier les citations `(fuzzy)` |
+
+  Le 9B ne tient pas dans 6 Go et tourne en partie sur le processeur ; le 4b y tient. Le 4b
+  reformule environ une citation sur quatre : elles sont marquées `(fuzzy)`, jamais
+  présentées comme exactes. Choisir avec `--model-extraction qwen3.5:4b` ou
+  `llm.model_extraction` dans `config.json`.
 - L'analyse de chaque bloc est conservée dans `work/cache/analyse/` : une analyse
   interrompue reprend au premier bloc non fait. Le même texte avec le même modèle et le même
   prompt n'est jamais redemandé ; `--force` interroge à nouveau le modèle.
@@ -757,8 +779,9 @@ python import_sources.py --status --input ../YouTube2Post/work/sources/youtube/p
 Une longue playlist se traite en plusieurs fois, des deux côtés : `yt2post.py -n 10`
 transcrit les 10 prochaines vidéos non faites, `analyse.py --limit 5` analyse les 5
 prochaines sources non analysées, et `analyse.py --source 3` (son numéro, ou `--source
-youtube:<id>`) seulement celle-là. Sans `--query`, le sujet est le titre de la playlist :
-l'analyse garde ce qui se rapporte au sujet, donc donnez-en un vrai (`--query "Néandertal"`).
+youtube:<id>`) seulement celle-là. Sans `--query`, le sujet est le titre de la playlist.
+Une vidéo est analysée en entier quel que soit le sujet (voir plus bas) ; le sujet nomme le
+carnet et guide la synthèse, donnez le vôtre si vous en avez un (`--query "Néandertal"`).
 
 `--status` n'écrit rien. Il affiche une ligne par vidéo, dans l'ordre de la playlist, puis
 la commande de l'étape suivante :

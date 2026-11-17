@@ -7,7 +7,11 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from config import DEFAULT_LLM_MAX_CHARS
+from config import (
+    DEFAULT_LLM_MAX_CHARS,
+    DEFAULT_TRANSCRIPT_BLOCK_CHARS,
+    DEFAULT_TRANSCRIPT_MAX_CLAIMS,
+)
 from models import LlmExtraction
 from pipeline.analyse_policy import ProcessDecision, should_process
 from pipeline.keyword_matcher import KeywordMatcher
@@ -49,6 +53,8 @@ class CollectionAnalyzer:
         two_pass_extraction: bool = False,
         ocr_lang: str = "fra",
         cache_dir: Path | None = None,
+        max_claims: int = DEFAULT_TRANSCRIPT_MAX_CLAIMS,
+        block_chars: int = DEFAULT_TRANSCRIPT_BLOCK_CHARS,
     ) -> None:
         """Wire LLM extractor, text extractor, and download directory.
 
@@ -59,6 +65,8 @@ class CollectionAnalyzer:
             client=client,
             max_chars=max_chars,
             two_pass_extraction=two_pass_extraction,
+            max_claims=max_claims,
+            block_chars=block_chars,
         )
         # Native first; OCR on demand via enable_ocr (always) or auto_ocr (retry).
         self._text = TextExtractor(
@@ -216,7 +224,8 @@ class CollectionAnalyzer:
             # their keyword hits, within one block
             analyse = self._extractor.extract_in_blocks if transcript else self._extractor.extract
             extra = ({"cache_dir": self.cache_dir, "refresh": force,
-                      "on_block": _block_progress(progress)} if transcript else {})
+                      "on_block": _block_progress(progress, self._typical_block_seconds())}
+                     if transcript else {})
             progress.wait("asking the model")
             extraction = analyse(
                 collection.query,
@@ -285,6 +294,15 @@ class CollectionAnalyzer:
         )
         return patched, stats
 
+    def _typical_block_seconds(self) -> float | None:
+        """The usual time of one block with this model, from the call log."""
+        from pipeline.llm_call_log import typical_call_seconds
+
+        try:
+            return typical_call_seconds(self._extractor.client.model)
+        except Exception:  # noqa: BLE001 - an estimate must never stop the analysis
+            return None
+
     def _persist(
         self,
         text: str,
@@ -343,8 +361,12 @@ def _result_text(extraction: LlmExtraction) -> str:
     return text + (", to review" if extraction.needs_review else "")
 
 
-def _block_progress(progress: Run):
-    """Show 'block 3/8 [26:00–39:00], about 12 min left' while a transcript is analysed."""
+def _block_progress(progress: Run, typical: float | None = None):
+    """
+    Show 'block 3/8 [26:00–39:00], about 12:00 left' while a transcript is
+    analysed: from the blocks done so far, and for the first block from
+    ``typical``, the usual time of a call of this model on this computer.
+    """
     started = time.monotonic()
 
     def on_block(number: int, total: int, label: str) -> None:
@@ -352,6 +374,8 @@ def _block_progress(progress: Run):
         if number > 1:  # from the blocks done so far; a cut answer adds blocks
             left = (time.monotonic() - started) / (number - 1) * (total - number + 1)
             text += f", about {duration(left)} left"
+        elif typical:
+            text += f", about {duration(typical * total)} left (earlier runs)"
         progress.wait(text)
 
     return on_block

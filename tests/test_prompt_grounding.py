@@ -316,3 +316,12 @@ def test_normalize_messy_synthesize_blocks():
     assert 25 in result.points_a_verifier[0].indices_sources
     assert 25 in result.sources_par_theme.get("industrie_et_hygiene", [])
     assert result.sources_par_theme["cadre_naturel"] == [5, 13]
+
+
+def test_punctuation_is_not_part_of_a_verbatim_citation():
+    said = "durant les années 1920, en Chine, vous allez avoir à la fois la démonstration"
+    assert citation_found_in_document("Durant les années 1920 en Chine. Vous allez avoir", said)
+    assert citation_found_in_document("l'histoire de la préhistoire", "L’histoire de la préhistoire.")
+    # The words themselves must be the same
+    assert not citation_found_in_document("durant les années 1930 en Chine", said)
+    assert not citation_found_in_document("...", said)

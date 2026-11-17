@@ -78,11 +78,13 @@ class OllamaService:
         model: str | None = None,
         options: dict | None = None,
         think: bool = False,
+        format: dict | str | None = None,  # noqa: A002 - the name of Ollama's parameter
     ) -> str:
         """Complétion one-shot (system + user) via l'API chat.
 
         ``think=False`` (défaut) évite les modèles « reasoning » (ex. qwen3.5)
         qui remplissent ``message.thinking`` et laissent ``content`` vide.
+        ``format`` : un schéma JSON (ou "json") qui contraint la réponse.
         """
         messages: list[dict[str, str]] = []
         if system:
@@ -95,6 +97,8 @@ class OllamaService:
         }
         if options:
             chat_kwargs["options"] = options
+        if format is not None:
+            chat_kwargs["format"] = format
         response = self._client.chat(**chat_kwargs)
         message = response.message if hasattr(response, "message") else response["message"]
         content = getattr(message, "content", None)

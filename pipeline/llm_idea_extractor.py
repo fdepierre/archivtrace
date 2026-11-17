@@ -23,7 +23,11 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from config import DEFAULT_LLM_MAX_CHARS
+from config import (
+    DEFAULT_LLM_MAX_CHARS,
+    DEFAULT_TRANSCRIPT_BLOCK_CHARS,
+    DEFAULT_TRANSCRIPT_MAX_CLAIMS,
+)
 from models import ExtractedPage, ExtractedText, KeywordMatch, LlmExtraction
 from pipeline.llm_gateway import LlmGateway
 from pipeline.llm_validation_stats import VALIDATION_STATS
@@ -33,11 +37,14 @@ from pipeline.prompt_schemas import (
     PromptValidationError,
     extract_json_payload,
     render_analyze_markdown,
+    transcript_answer_chars,
+    transcript_answer_schema,
     validate_analyze_response,
 )
 from pipeline.prompts import (
     ANALYZE_DOCUMENT_DESCRIPTIVE_PROMPT,
     ANALYZE_DOCUMENT_PROMPT,
+    ANALYZE_TRANSCRIPT_PROMPT,
 )
 from utils.strings import truncate
 
@@ -95,9 +102,18 @@ class LlmIdeaExtractor:
         client: LlmGateway,
         max_chars: int = DEFAULT_LLM_MAX_CHARS,
         two_pass_extraction: bool = False,
+        max_claims: int = DEFAULT_TRANSCRIPT_MAX_CLAIMS,
+        block_chars: int = DEFAULT_TRANSCRIPT_BLOCK_CHARS,
     ) -> None:
-        """Bind the shared LLM gateway and per-document char budget."""
+        """Bind the shared LLM gateway and per-document char budget.
+
+        ``max_claims``: the most claims asked for one block of a transcript.
+        ``block_chars``: the size of a transcript's blocks, within ``max_chars``.
+        """
         self.client = client
+        self.block_chars = min(block_chars, max_chars)
+        self.max_claims = max_claims
+        self.transcript_prompt = ANALYZE_TRANSCRIPT_PROMPT
         self.max_chars = max_chars
         self.two_pass_extraction = two_pass_extraction
         self.prompt = ANALYZE_DOCUMENT_PROMPT
@@ -114,12 +130,17 @@ class LlmIdeaExtractor:
         cote: str | None = None,
         date: str | None = None,
         whole_text: bool = False,
+        prompt=None,
     ) -> LlmExtraction:
         """Run LLM extraction; never raises into the pipeline.
 
         ``whole_text``: send all the pages given (one block of a transcript),
-        not only the pages around keyword hits.
+        not only the pages around keyword hits. ``prompt``: another prompt
+        with the same answer schema (the transcript one); no descriptive pass
+        is made with it.
         """
+        prompt = prompt or self.prompt
+        two_pass = self.two_pass_extraction and prompt is self.prompt
         if not self.client.is_available():
             return LlmExtraction(
                 body="",
@@ -136,7 +157,7 @@ class LlmIdeaExtractor:
                 skipped=True,
             )
         user_prompt = self._build_prompt(
-            self.prompt,
+            prompt,
             query,
             title,
             sample,
@@ -146,26 +167,30 @@ class LlmIdeaExtractor:
             date=date,
         )
         try:
+            constrained = self._constraints(prompt)
             raw = self.client.complete(
                 user_prompt,
-                system=self.prompt.system,
+                system=prompt.system,
                 operation="analyse",
+                **constrained,
             )
-            raw = self._retry_json_if_needed(raw, user_prompt, self.prompt.system)
+            first = raw
+            raw = self._retry_json_if_needed(raw, user_prompt, prompt.system, constrained)
             try:
                 parsed = validate_analyze_response(raw, document_text=sample)
             except PromptValidationError as exc:
                 VALIDATION_STATS.record(self.client.model, success=False)
                 logger.error(
-                    "Invalid analyze_document output for %r (prompt v%s): %s",
+                    "Invalid %s output for %r (prompt v%s): %s",
+                    prompt.id,
                     title,
-                    self.prompt.version,
+                    prompt.version,
                     exc,
                 )
                 snippet = (raw or "")[:240].replace("\n", " ")
                 logger.error("Raw LLM snippet: %r", snippet)
                 # Still try descriptive pass if enabled — may salvage pistes.
-                if self.two_pass_extraction:
+                if two_pass:
                     descriptive = self._run_descriptive_pass(
                         query,
                         title,
@@ -194,7 +219,7 @@ class LlmIdeaExtractor:
                     model=self.client.model,
                     error=f"À revoir manuellement — sortie LLM invalide: {exc}",
                     needs_review=True,
-                    prompt_version=self.prompt.version,
+                    prompt_version=prompt.version,
                     raw_response=raw,
                 )
             VALIDATION_STATS.record(self.client.model, success=True)
@@ -204,7 +229,12 @@ class LlmIdeaExtractor:
                 for a in parsed.affirmations
                 if a.statut == "confirme_par_le_document"
             ]
-            needs_second = self.two_pass_extraction and (
+            if raw is not first:  # the first answer was not JSON: the second one may be shorter
+                parsed = parsed.model_copy(update={"limites": (
+                    (parsed.limites or "") + " | Réponse obtenue au second essai (la "
+                    "première n'était pas un JSON valide) : elle peut être incomplète."
+                ).strip(" |")})
+            needs_second = two_pass and (
                 not confirmed or parsed.document_status == "a_revoir_manuellement"
             )
             if needs_second:
@@ -243,7 +273,7 @@ class LlmIdeaExtractor:
                     if needs_review
                     else None
                 ),
-                prompt_version=self.prompt.version,
+                prompt_version=prompt.version,
                 claims=parsed.model_dump(),
                 raw_response=raw,
             )
@@ -253,7 +283,7 @@ class LlmIdeaExtractor:
                 body="",
                 model=self.client.model,
                 error=f"{type(exc).__name__}: {exc}",
-                prompt_version=self.prompt.version,
+                prompt_version=prompt.version,
             )
 
     def extract_in_blocks(
@@ -276,8 +306,14 @@ class LlmIdeaExtractor:
         text is read from ``cache_dir`` instead of asking the model again,
         unless ``refresh`` (the new answer then replaces the cached one).
         ``on_block(number, total, label)`` is called before each block.
+
+        Each block is asked with the transcript prompt: the main claims of the
+        passage, at most ``max_claims``, whatever the subject. An answer cut by
+        the output limit is not repaired: the block is analysed again in two
+        halves, and that decision is cached too, so that a later run does not
+        ask the cut answer again.
         """
-        blocks = text_blocks(text.pages, self.max_chars)
+        blocks = text_blocks(text.pages, self.block_chars)
         results: list[tuple[str, LlmExtraction]] = []
         pending = list(blocks)
         number = 0
@@ -294,14 +330,22 @@ class LlmIdeaExtractor:
                                        quality_note=text.quality_note)
             block_matches = [m for m in matches if m.page in pages]
             key = self._cache_key(query, title, block_text)
+            if not refresh and len(block) > 1 and _cached_split(cache_dir, key):
+                logger.info("%s — bloc %s : coupé en deux (décision en cache)", title, label)
+                half = len(block) // 2
+                first = block[:half + 1] if len(block) > 2 else block[:half]
+                pending[:0] = [first, block[half:]]
+                continue
             extraction = None if refresh else _cache_read(cache_dir, key)
             if extraction is None:
                 extraction = self.extract(query, title=title, text=block_text,
                                           matches=block_matches, source=source,
-                                          cote=cote, date=date, whole_text=True)
+                                          cote=cote, date=date, whole_text=True,
+                                          prompt=self.transcript_prompt)
                 if extraction.claims is not None:
                     _cache_write(cache_dir, key, extraction)
             if extraction.claims is None and extraction.needs_review and len(block) > 1:
+                _cache_split(cache_dir, key)
                 # Usually an answer cut by the output limit: too many claims
                 # for one call. Analyse the two halves instead (sharing their
                 # boundary passage when there are more than two).
@@ -319,7 +363,9 @@ class LlmIdeaExtractor:
     def _cache_key(self, query: str, title: str, block: ExtractedText) -> str:
         """Same model, prompt, subject and text: the same analysis."""
         payload = json.dumps({
-            "model": self.client.model, "prompt": self.prompt.version,
+            "model": self.client.model,
+            "prompt": f"{self.transcript_prompt.id}.v{self.transcript_prompt.version}",
+            "max_claims": self.max_claims,
             "descriptive": self.two_pass_extraction, "query": query, "title": title,
             "text": self._build_sample(block, [], whole_text=True),
         }, ensure_ascii=False, sort_keys=True)
@@ -366,7 +412,7 @@ class LlmIdeaExtractor:
             model=self.client.model,
             needs_review=needs_review,
             error=error,
-            prompt_version=self.prompt.version,
+            prompt_version=self.transcript_prompt.version,
             claims=combined.model_dump(),
             raw_response="\n\n".join(r.raw_response or "" for _, r in results),
         )
@@ -460,13 +506,35 @@ class LlmIdeaExtractor:
             }
         )
 
-    def _retry_json_if_needed(self, raw: str, user_prompt: str, system: str) -> str:
+    def _constraints(self, prompt) -> dict:
+        """
+        For the transcript prompt: the answer schema (at most max_claims claims
+        of bounded length), and an output limit large enough for the longest
+        answer it allows, so that it is never cut.
+        """
+        if prompt is not self.transcript_prompt:
+            return {}
+        from pipeline.llm_gateway import CHARS_PER_TOKEN
+
+        longest = -(-transcript_answer_chars(self.max_claims) // CHARS_PER_TOKEN)  # rounded up
+        return {"json_schema": transcript_answer_schema(self.max_claims),
+                "max_tokens": max(self.client.max_tokens or 0, longest)}
+
+    def _retry_json_if_needed(self, raw: str, user_prompt: str, system: str,
+                              constrained: dict | None = None) -> str:
         """One repair pass when the model returned non-JSON / empty content."""
         try:
             extract_json_payload(raw)
             return raw
         except PromptValidationError:
             pass
+        limit = (constrained or {}).get("max_tokens", self.client.max_tokens)
+        if _looks_cut(raw, limit):
+            # The answer reached the output limit: asking again gives the same
+            # length, cut again. Leave it invalid: the caller splits the text.
+            logger.warning("Answer cut by the output limit (%d characters): not repaired",
+                           len(raw))
+            return raw
         repair = (
             user_prompt
             + "\n\n<repair>\nTa réponse précédente n'était pas un JSON valide. "
@@ -479,6 +547,7 @@ class LlmIdeaExtractor:
                 repair,
                 system=system,
                 operation="analyse_repair",
+                **(constrained or {}),
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("JSON repair call failed: %s", exc)
@@ -513,6 +582,7 @@ class LlmIdeaExtractor:
             date=date or "—",
             match_count=len(matches),
             matches_block=matches_block,
+            max_claims=self.max_claims,
         )
 
     def _build_sample(
@@ -554,6 +624,29 @@ class LlmIdeaExtractor:
             body = "\n\n".join(chunks) if chunks else text.full_text
 
         return (lead + body)[: self.max_chars] if lead else body[: self.max_chars]
+
+
+# An answer longer than this many characters per output token reached the
+# limit (French JSON is about 3.5 characters per token)
+_CUT_CHARS_PER_TOKEN = 3
+
+
+def _looks_cut(raw: str, max_tokens: int | None) -> bool:
+    """True for an invalid answer as long as the output limit allows: it was cut."""
+    return bool(max_tokens) and len(raw or "") >= max_tokens * _CUT_CHARS_PER_TOKEN
+
+
+def _cached_split(cache_dir: Path | None, key: str) -> bool:
+    """True when an earlier run had to split this block: its answer was cut."""
+    return cache_dir is not None and (cache_dir / f"{key}.split").exists()
+
+
+def _cache_split(cache_dir: Path | None, key: str) -> None:
+    """Remember that this block is analysed in two halves."""
+    if cache_dir is None:
+        return
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / f"{key}.split").write_text("", encoding="utf-8")
 
 
 def _cache_read(cache_dir: Path | None, key: str) -> LlmExtraction | None:

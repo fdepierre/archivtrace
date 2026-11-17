@@ -92,3 +92,38 @@ def log_llm_call(
         json.dumps(record, ensure_ascii=False)
     )
     return record
+
+
+def typical_call_seconds(
+    model: str,
+    operation: str = "analyse",
+    *,
+    log_dir: Path | None = None,
+    recent: int = 20,
+) -> float | None:
+    """
+    How long a call of ``model`` usually takes on this computer: the median of
+    its ``recent`` latest successful calls in the log. None when it was never used.
+    """
+    from statistics import median
+
+    path = (Path(log_dir) if log_dir else DEFAULT_LOG_DIR) / "llm_calls.jsonl"
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            handle.seek(max(0, handle.tell() - 2_000_000))
+            lines = handle.read().decode("utf-8", errors="ignore").splitlines()
+    except OSError:
+        return None
+    seconds: list[float] = []
+    for line in reversed(lines):
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if (record.get("model") == model and record.get("operation") == operation
+                and record.get("success") and record.get("provider") != "stub"):
+            seconds.append(float(record.get("duration_ms") or 0) / 1000)
+            if len(seconds) >= recent:
+                break
+    return median(seconds) if seconds else None

@@ -29,6 +29,12 @@ DEFAULT_USER_AGENT = (
 
 # Shared defaults for LLM settings (analyse / synthesize / config.json).
 DEFAULT_LLM_MAX_CHARS = 12_000
+# A transcript block is answered with at most this many claims: a longer answer
+# is cut by the output limit (ollama_num_predict), and its time is lost.
+DEFAULT_TRANSCRIPT_MAX_CLAIMS = 6
+# A transcript is analysed in blocks of at most this many characters (about 6
+# minutes of speech): with a bounded answer, a longer block loses its middle.
+DEFAULT_TRANSCRIPT_BLOCK_CHARS = 6_000
 DEFAULT_OLLAMA_TIMEOUT = 600.0
 DEFAULT_OLLAMA_NUM_PREDICT = 1024
 # Ollama loads a model with a small context window (4096 tokens) unless asked:
@@ -111,6 +117,8 @@ class Config:
     ollama_host: str = DEFAULT_OLLAMA_HOST
     ollama_model: str = DEFAULT_OLLAMA_MODEL
     llm_max_chars: int = DEFAULT_LLM_MAX_CHARS
+    transcript_max_claims: int = DEFAULT_TRANSCRIPT_MAX_CLAIMS
+    transcript_block_chars: int = DEFAULT_TRANSCRIPT_BLOCK_CHARS
     ollama_timeout: float = DEFAULT_OLLAMA_TIMEOUT
     ollama_num_predict: int = DEFAULT_OLLAMA_NUM_PREDICT
     synthesis_num_predict: int = DEFAULT_SYNTHESIS_NUM_PREDICT

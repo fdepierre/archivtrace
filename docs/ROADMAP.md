@@ -62,37 +62,56 @@ c'est le premier chantier.
 
 Chaque chantier a un objectif, un critère de réussite, et ce qu'il ne doit pas faire.
 
-### A. Coût de l'analyse des longues playlists — priorité 1
+### A et A bis. Coût et sujet de l'analyse — faits (branche `analysis-cost`)
 
-- **Objectif** : analyser une playlist de 100 vidéos en quelques nuits, pas en semaines.
-- **Pistes, dans l'ordre** :
-  0. Borner la réponse : demander au plus N affirmations par bloc (les plus importantes), et
-     adapter la taille du bloc à la densité, pour ne plus tronquer. C'est le gain le plus
-     sûr d'après le test.
-  0 bis. Mettre en cache la décision « ce bloc se coupe en deux », pour ne pas redemander au
-     modèle une réponse qui a déjà été tronquée ; et dire dans les limites de la source
-     quand une réponse a été réparée, car elle peut contenir moins d'affirmations.
-  1. Mesurer qwen3.5:4b contre 9B sur les mêmes 3 vidéos : durée, nombre d'affirmations,
-     part de citations exactes. Le 4b tient en entier sur un GPU de 6 Go.
-  2. Analyse ciblée : n'envoyer au modèle que les blocs proches d'un passage qui contient le
-     sujet (les extraits mécaniques existent déjà). Afficher le nombre de blocs lus et sautés.
-  3. Régler `llm_max_chars` et `ollama_num_predict` pour qu'aucune réponse ne soit tronquée.
-  4. Estimer la durée avant de lancer, à partir du nombre de blocs et de la vitesse mesurée.
-- **Réussite** : durée d'analyse divisée par 4 au moins sur les 3 vidéos de référence, sans
-  baisse de la part de citations exactes.
-- **À ne pas faire** : sauter des blocs sans le dire ; une vidéo analysée en partie doit
-  l'indiquer dans ses limites.
+Mesures du 17 novembre 2026 (GPU de 6 Go), après le chantier :
 
-### A bis. Sujet de l'analyse d'une vidéo — priorité 1
+| Configuration | Conférence de 32 min | Affirmations | Citations exactes | Tranches de 5 min couvertes |
+|---|---|---|---|---|
+| Avant : 9B, sujet = titre de la playlist | 19 min 27 s | 17 | 88 % | 2 sur 7 |
+| 9B, nouvelle consigne | 11 min 24 s | 32 | 90 % | 7 sur 7 |
+| 4b, nouvelle consigne | 1 min 42 s | 36 | 69 % | 6 sur 7 (la 7e dure 1 min 40) |
 
-- **Objectif** : une vidéo importée sans sujet précis doit quand même être analysée en entier.
-- **Pistes** : un mode « sans sujet » pour les transcriptions, qui extrait les affirmations
-  principales de la vidéo elle-même (son titre sert de contexte, pas de filtre) ; le sujet
-  de recherche sert ensuite à trier et à rapprocher, pas à écarter à l'extraction.
-- **Fait en attendant** : `import_sources.py` prévient quand le sujet est le titre de la
-  playlist.
-- **Réussite** : sur la vidéo de 32 min du test, des affirmations sur toute la durée, pas
-  seulement sur les 6 dernières minutes.
+Avec le 4b, les deux autres conférences de référence (77 et 83 min) prennent 3 min 58 s et
+6 min, 71 % et 81 % de citations exactes, toutes leurs tranches couvertes, aucune réponse
+coupée. La playlist de 197 h demanderait environ 12 h avec le 4b, environ 70 h avec le 9B
+(estimation d'après la vidéo de 32 min).
+
+Ce qui a été fait :
+
+- **A bis** : une consigne propre aux transcriptions (`analyze_transcript`) demande les
+  affirmations principales de chaque passage ; le sujet et le titre sont un contexte, pas un
+  filtre. Critère atteint : des affirmations sur toute la durée de la vidéo.
+- **A, piste 0** : au plus 6 affirmations par bloc d'environ 6 min, champs de longueur
+  bornée, imposés à Ollama par un schéma JSON pendant la génération.
+- **A, piste 0 bis** : une réponse coupée n'est plus réparée (même longueur, coupée de
+  nouveau) : le bloc est tout de suite coupé en deux, et la décision est mise en cache. Une
+  réponse obtenue au second essai le dit dans les limites de la source.
+- **A, piste 1** : 4b contre 9B mesuré (tableau ci-dessus) ; le 9B reste le modèle par
+  défaut, le 4b est documenté pour les playlists entières.
+- **A, piste 3** : la limite de sortie est relevée à la longueur de la plus longue réponse
+  que le schéma permet.
+- **A, piste 4** : le temps restant est estimé dès le premier bloc, à partir des appels
+  précédents du même modèle (`work/logs/llm/llm_calls.jsonl`).
+- Une citation dont seuls la casse et la ponctuation diffèrent est exacte (Whisper devine
+  la ponctuation).
+
+Critère « durée divisée par 4 sans baisse de la part de citations exactes » : **atteint
+par aucun des deux modèles seul**. Le 9B garde l'exactitude (90 %) mais n'est que 1,7 fois
+plus rapide ; le 4b est 11 fois plus rapide mais reformule une citation sur quatre. Une
+consigne plus stricte sur la copie n'a rien changé pour le 4b (69 %).
+
+Reste :
+
+- **Piste 2, analyse ciblée** : abandonnée, elle contredit A bis (ne rien écarter à
+  l'extraction).
+- **Réconcilier vitesse et exactitude** : analyser au 4b, puis faire vérifier ou recopier
+  par le 9B les seules citations `(fuzzy)` ; mesurer le gain.
+- Afficher par source le nombre de citations exactes et approchées.
+- L'environnement de développement charge `ollama_shared` depuis le dossier voisin
+  `../shared`, sans schéma JSON : l'analyse le signale ; réinstaller depuis `vendor/`.
+- Les tests écrivent leurs appels factices dans le vrai journal `llm_calls.jsonl` (filtrés
+  par l'estimation, mais à séparer).
 
 ### B. Types d'éléments et fiches
 
@@ -163,7 +182,7 @@ Chaque chantier a un objectif, un critère de réussite, et ce qu'il ne doit pas
 
 ## Ordre proposé
 
-1. **A** et **A bis** : sans eux, les autres chantiers ne peuvent être essayés que sur quelques vidéos.
+1. ~~**A** et **A bis**~~ : faits, sauf la réconciliation vitesse et exactitude.
 2. **B** : c'est ce qui rend le corpus utilisable.
 3. **F** et **G** en continu, à chaque incrément.
 4. **C**, puis **D** et **E** selon les besoins constatés sur les fiches.

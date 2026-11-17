@@ -102,6 +102,8 @@ def _build_extractor(cfg: Config) -> object | None:
         client=client,
         max_chars=cfg.llm_max_chars,
         two_pass_extraction=cfg.two_pass_extraction,
+        max_claims=cfg.transcript_max_claims,
+        block_chars=cfg.transcript_block_chars,
     )
 
 

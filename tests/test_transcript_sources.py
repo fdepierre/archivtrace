@@ -9,6 +9,7 @@ from pipeline.collection_analyzer import CollectionAnalyzer
 from pipeline.grounded_claims import collect_grounded_claims
 from pipeline.llm_gateway import LlmBackend, LlmCompletionResult, LlmGateway
 from pipeline.markdown_reader import read_collection
+from pipeline.prompt_schemas import transcript_answer_chars, transcript_answer_schema
 from pipeline.source_classifier import classify_source_heuristic
 from pipeline.synthesis_structure import build_source_catalog
 from pipeline.text_extractor import TextExtractor
@@ -573,3 +574,101 @@ def test_import_command_shows_steps_and_where_the_notebook_is(tmp_path, capsys):
     assert import_sources.main(["--input", str(tmp_path / "empty"), "--query", "x",
                                 "--research-dir", str(research)]) == 1
     assert "  ✖ no YouTube2Post transcript" in capsys.readouterr().out
+
+
+# -- Cost of the analysis of long videos (roadmap A and A bis) --------------------
+
+
+class _CutBackend(_BlockBackend):
+    """Answers like a model cut by its output limit when the block is long."""
+
+    supports_json_schema = True
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.prompts: list[str] = []
+        self.schemas: list[dict | None] = []
+        self.limits: list[int | None] = []
+
+    def generate(self, prompt, *, system=None, max_tokens=None, think=False,
+                 temperature=None, json_schema=None):
+        self.prompts.append(prompt)
+        self.schemas.append(json_schema)
+        self.limits.append(max_tokens)
+        document = prompt.split("<document ", 1)[-1].split("</document>", 1)[0]
+        if "Phrase numéro 7 " in document and len(document) > 3000:
+            self.calls += 1
+            return LlmCompletionResult(text='{"affirmations": [' + "x" * (3 * max_tokens))
+        return super().generate(prompt, system=system, max_tokens=max_tokens)
+
+
+def test_cut_answer_is_split_at_once_and_the_split_is_remembered(tmp_path):
+    first = _CutBackend()
+    text = _long_analysis(tmp_path, first)
+    assert "NON ANALYSÉ" not in text and "Phrase numéro 7 :" in text
+    assert not any("<repair>" in p for p in first.prompts)  # a cut answer is not asked again
+    again = _CutBackend()
+    assert _long_analysis(tmp_path, again) == text
+    assert again.calls == 0  # neither the cut block nor its halves asked again
+
+
+def test_transcript_blocks_ask_a_bounded_answer_whatever_the_subject(tmp_path):
+    backend = _CutBackend()
+    _write(tmp_path / "sources", _source(segments=LONG))
+    notebook = import_transcripts([tmp_path / "sources"], "Conférences et cours publics",
+                                  research_dir=tmp_path / "research").notebook
+    analyzer = CollectionAnalyzer(
+        client=LlmGateway(backend, provider="stub", model="stub", operation="analyse",
+                          max_tokens=100),
+        download_dir=tmp_path / "downloads", max_chars=4000, max_claims=3)
+    analyzer.run(read_collection(notebook))
+    prompt = backend.prompts[0]
+    assert "Nombre maximal d'affirmations : 3" in prompt
+    assert "contexte seulement, pas un filtre) : Conférences et cours publics" in prompt
+    schema = backend.schemas[0]
+    assert schema is not None and schema["properties"]["affirmations"]["maxItems"] == 3
+    # The output limit is raised to the longest answer the schema allows
+    assert backend.limits[0] * 3 >= transcript_answer_chars(3)
+
+
+def test_answer_given_at_the_second_try_is_reported():
+    from models import ExtractedText
+    from pipeline.llm_idea_extractor import LlmIdeaExtractor
+
+    class Backend(_BlockBackend):
+        def generate(self, prompt, **kwargs):
+            if self.calls == 0:
+                self.calls += 1
+                return LlmCompletionResult(text="Voici les affirmations :")
+            return super().generate(prompt, **kwargs)
+
+    extractor = LlmIdeaExtractor(client=LlmGateway(Backend(), provider="stub", model="stub",
+                                                   operation="analyse"))
+    passages = transcript_passages(_source(segments=LONG))[:2]
+    result = extractor.extract("x", title="t", text=ExtractedText(pages=passages),
+                               matches=[], whole_text=True, prompt=extractor.transcript_prompt)
+    assert result.claims and "second essai" in result.claims["limites"]
+
+
+def test_the_answer_schema_bounds_every_claim():
+    schema = transcript_answer_schema(5)
+    claim = schema["properties"]["affirmations"]["items"]
+    assert schema["properties"]["affirmations"]["maxItems"] == 5
+    assert all(claim["properties"][f]["maxLength"] for f in ("citation_exacte", "affirmation"))
+    assert set(claim["required"]) >= {"citation_exacte", "affirmation", "statut"}
+
+
+def test_time_left_is_estimated_from_earlier_calls_of_the_model(tmp_path):
+    from pipeline.llm_call_log import typical_call_seconds
+
+    log = tmp_path / "llm_calls.jsonl"
+    lines = [{"model": "m", "operation": "analyse", "success": True, "provider": "ollama",
+              "duration_ms": ms} for ms in (20_000, 30_000, 90_000)]
+    lines += [{"model": "m", "operation": "analyse", "success": True, "provider": "stub",
+               "duration_ms": 0},
+              {"model": "other", "operation": "analyse", "success": True, "provider": "ollama",
+               "duration_ms": 1}]
+    log.write_text("\n".join(json.dumps(x) for x in lines) + "\nnot json\n", encoding="utf-8")
+    assert typical_call_seconds("m", log_dir=tmp_path) == 30
+    assert typical_call_seconds("never", log_dir=tmp_path) is None
+    assert typical_call_seconds("m", log_dir=tmp_path / "none") is None

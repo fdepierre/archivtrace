@@ -720,13 +720,35 @@ python analyse.py --input work/research/<date>_neandertal_youtube2post_collecte.
 - A video is **secondary evidence** (`preuve_secondaire`): a citation proves the statement
   is made in the video, not that it is established. The transcription is automatic and not
   proofread (`Text quality note`).
-- A video is read **whole**, in blocks of consecutive passages of at most `llm_max_chars`
-  characters (about 15 min of speech with the default 12000): one model call per block,
-  each block's citations checked against that block, then the claims merged (a citation
-  read twice where two blocks overlap is kept once). A block whose answer is invalid
-  (usually cut by the output limit, `ollama_num_predict`, when the speech is dense) is
-  analysed again as two halves. The analysis says how many blocks were read, and reports a
-  block still failing (`NON ANALYSÉ`) instead of hiding it.
+- A video is read **whole**, in blocks of about 6 minutes of speech
+  (`transcript_block_chars`, 6000 characters): one model call per block, each block's
+  citations checked against that block, then the claims merged (a citation read twice
+  where two blocks overlap is kept once).
+- Each block is asked for **its main claims, whatever the research subject**: facts,
+  dates, definitions, hypotheses, references. The subject and the video's title are given
+  as context, never as a filter, so a talk is analysed from its first minute to its last.
+  The subject is used afterwards, to sort and to write the synthesis.
+- The answer is bounded: at most `transcript_max_claims` claims per block (6), each field
+  of limited length. With Ollama, these bounds are given as a JSON schema and enforced
+  while the answer is written, so it cannot be cut by the output limit nor be invalid JSON.
+  An answer cut anyway (another provider) is not asked again: the block is analysed as two
+  halves at once, and that decision is cached. The analysis says how many blocks were read,
+  and reports a block still failing (`NON ANALYSÉ`) instead of hiding it.
+- A citation is **exact** when its words are those of the transcript, in the same order;
+  case and punctuation do not count (Whisper's punctuation is a guess). A citation the
+  model rephrased is located all the same and marked `(fuzzy)`.
+- **Which model.** Measured on a PC with a 6 GB GPU, three talks of the Musée de l'Homme
+  playlist (32, 77 and 83 min):
+
+  | Model | Time for the 32 min talk | Exact citations | Use it for |
+  |---|---|---|---|
+  | `qwen3.5` (9B, default) | 11 min 24 s | 90 % | a few videos, when exactness matters most |
+  | `qwen3.5:4b` | 1 min 42 s (3 talks, 3 h 12: 11 min 40 s) | 69 to 81 % | a whole playlist; check the `(fuzzy)` citations |
+
+  The 9B does not fit in 6 GB and runs partly on the processor; the 4b fits. The 4b
+  rephrases about one citation in four: those are marked `(fuzzy)`, never presented as
+  exact. Choose with `--model-extraction qwen3.5:4b` or `llm.model_extraction` in
+  `config.json`.
 - Each block's analysis is kept in `work/cache/analyse/`: an interrupted analysis resumes
   at the first block not done. The same text, model and prompt is never asked twice;
   `--force` asks the model again.
@@ -748,8 +770,9 @@ python import_sources.py --status --input ../YouTube2Post/work/sources/youtube/p
 A long playlist is done in several runs, on both sides: `yt2post.py -n 10` transcribes
 the next 10 videos not done yet, `analyse.py --limit 5` analyses the next 5 sources not
 analysed yet, and `analyse.py --source 3` (its number, or `--source youtube:<id>`) only
-that one. Without `--query`, the subject is the playlist's title: the analysis keeps what
-relates to the subject, so give a real one (`--query "Néandertal"`).
+that one. Without `--query`, the subject is the playlist's title. A video is analysed
+whole whatever the subject (see below); the subject names the notebook and guides the
+synthesis, so give your own when you have one (`--query "Néandertal"`).
 
 `--status` writes nothing. It shows one line per video, in the playlist's order, then
 the command for the next step:

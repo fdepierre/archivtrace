@@ -157,6 +157,8 @@ def load_config(path: Path | None = None) -> Config:
         "ollama_host": str,
         "ollama_model": str,
         "llm_max_chars": int,
+        "transcript_max_claims": int,
+        "transcript_block_chars": int,
         "ollama_timeout": float,
         "ollama_num_predict": int,
         "synthesis_num_predict": int,

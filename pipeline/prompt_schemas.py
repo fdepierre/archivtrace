@@ -69,6 +69,47 @@ class AnalyzeDocumentResult(BaseModel):
     limites: str = ""
 
 
+# Longest values allowed in a transcript answer (characters): with at most
+# max_claims claims, the whole answer stays within the output limit
+_TRANSCRIPT_FIELD_LIMITS = {"citation_exacte": 300, "affirmation": 300, "theme": 60}
+_TRANSCRIPT_LIMITES_CHARS = 400
+
+
+def transcript_answer_schema(max_claims: int) -> dict[str, Any]:
+    """
+    JSON schema of the analyze_transcript answer, given to Ollama so that the
+    answer is valid JSON with at most ``max_claims`` claims of bounded length:
+    it can no longer be cut by the output limit.
+    """
+    text = {name: {"type": "string", "minLength": 1, "maxLength": limit}
+            for name, limit in _TRANSCRIPT_FIELD_LIMITS.items()}
+    claim = {
+        "type": "object",
+        "properties": {
+            **text,
+            "niveau_confiance": {"type": "string", "enum": ["eleve", "moyen", "faible"]},
+            "statut": {"type": "string",
+                       "enum": ["confirme_par_le_document", "insuffisant"]},
+        },
+        "required": [*text, "niveau_confiance", "statut"],
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "document_status": {"type": "string", "enum": ["ok", "a_revoir_manuellement"]},
+            "affirmations": {"type": "array", "items": claim, "maxItems": max_claims},
+            "limites": {"type": "string", "maxLength": _TRANSCRIPT_LIMITES_CHARS},
+        },
+        "required": ["document_status", "affirmations", "limites"],
+    }
+
+
+def transcript_answer_chars(max_claims: int) -> int:
+    """The longest answer the transcript schema allows, in characters (JSON included)."""
+    per_claim = sum(_TRANSCRIPT_FIELD_LIMITS.values()) + 200  # keys, enums, quotes
+    return max_claims * per_claim + _TRANSCRIPT_LIMITES_CHARS + 100
+
+
 class ChronologyItem(BaseModel):
     date: str = ""
     periode: str | None = None
@@ -221,8 +262,20 @@ def _normalize_for_citation(text: str) -> str:
     return re.sub(r"\s+", " ", text).casefold().strip()
 
 
+_PUNCTUATION_RE = re.compile(r"[^\w]+")
+
+
+def _words(text: str) -> str:
+    """The words of a normalized text, punctuation removed: ' word word '."""
+    return " " + " ".join(_PUNCTUATION_RE.sub(" ", text).split()) + " "
+
+
 def citation_found_in_document(citation: str, document_text: str) -> bool:
-    """True when the verbatim citation appears in the document (whitespace-tolerant)."""
+    """
+    True when the citation's words appear in the document, in the same order
+    (case, spaces and punctuation aside: a transcript's punctuation is the
+    speech recogniser's guess, an OCR's often noise; the words are the evidence).
+    """
     if not citation or not document_text:
         return False
     cit = _normalize_for_citation(citation)
@@ -230,7 +283,10 @@ def citation_found_in_document(citation: str, document_text: str) -> bool:
     if cit in doc:
         return True
     # Allow minor OCR glue (missing spaces) by removing spaces.
-    return cit.replace(" ", "") in doc.replace(" ", "")
+    if cit.replace(" ", "") in doc.replace(" ", ""):
+        return True
+    words = _words(cit)
+    return words.strip() != "" and words in _words(doc)
 
 
 def _citation_tokens(text: str) -> list[str]:

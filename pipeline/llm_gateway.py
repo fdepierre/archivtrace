@@ -70,6 +70,10 @@ class LlmCompletionResult:
 class LlmBackend(ABC):
     """Provider-specific transport (not used directly by the pipeline)."""
 
+    # True when generate() accepts json_schema: the answer is then constrained
+    # to that JSON schema while it is generated (valid JSON, bounded lists)
+    supports_json_schema: bool = False
+
     @abstractmethod
     def is_available(self) -> bool:
         """True when the remote/local endpoint answers."""
@@ -120,6 +124,8 @@ def context_window(prompt: str, system: str | None, max_tokens: int | None) -> i
 class OllamaBackend(LlmBackend):
     """Local Ollama via shared ``OllamaService``."""
 
+    supports_json_schema = True
+
     def __init__(
         self,
         *,
@@ -138,6 +144,15 @@ class OllamaBackend(LlmBackend):
         self.model = model
         self.base_url = base_url
         self._service = OllamaService(model=model, host=base_url, timeout=timeout)
+        # An older ollama_shared (installed from another folder) has no format
+        # parameter: the answer is then guided by the prompt alone
+        import inspect
+
+        self.supports_json_schema = "format" in inspect.signature(
+            self._service.generate).parameters
+        if not self.supports_json_schema:
+            logger.warning("ollama_shared without JSON schema support: reinstall it with "
+                           "pip install -e ./vendor/ollama_shared (answers may be cut)")
 
     def is_available(self) -> bool:
         return self._service.is_available()
@@ -156,6 +171,7 @@ class OllamaBackend(LlmBackend):
         max_tokens: int | None = None,
         think: bool = False,
         temperature: float | None = None,
+        json_schema: dict[str, Any] | None = None,
     ) -> LlmCompletionResult:
         options: dict[str, Any] = {"num_ctx": context_window(prompt, system, max_tokens)}
         if max_tokens:
@@ -170,6 +186,7 @@ class OllamaBackend(LlmBackend):
             model=self.model,
             options=options or None,
             think=think,
+            **({"format": json_schema} if json_schema is not None else {}),
         )
         return LlmCompletionResult(text=text or "")
 
@@ -353,8 +370,13 @@ class LlmGateway:
         max_tokens: int | None = None,
         think: bool | None = None,
         temperature: float | None = None,
+        json_schema: dict[str, Any] | None = None,
     ) -> str:
-        """Run one completion and append a rotating JSONL cost/telemetry record."""
+        """Run one completion and append a rotating JSONL cost/telemetry record.
+
+        ``json_schema``: constrain the answer to this schema, when the backend
+        can (Ollama); other backends get the prompt alone.
+        """
         op = operation or self.operation
         tokens = max_tokens if max_tokens is not None else self.max_tokens
         use_think = self.think if think is None else think
@@ -366,12 +388,18 @@ class LlmGateway:
         http_status: int | None = None
         usage = LlmUsage()
         try:
+            constrained = (
+                {"json_schema": json_schema}
+                if json_schema is not None and self._backend.supports_json_schema
+                else {}
+            )
             result = self._backend.generate(
                 prompt,
                 system=system,
                 max_tokens=tokens,
                 think=use_think,
                 temperature=use_temp,
+                **constrained,
             )
             text = result.text or ""
             usage = result.usage

@@ -96,8 +96,9 @@ def main(argv: list[str] | None = None) -> int:
                       "research subject with --query.")
         return 2
     if not args.query:
-        console.warn(f'Research subject: "{query}" (the playlist\'s title; the analysis keeps '
-                     "what relates to it: give a real subject with --query)")
+        console.note(f'Research subject: "{query}" (the playlist\'s title). Videos are '
+                     "analysed whole whatever the subject; it names the notebook and is "
+                     "used by the synthesis: give your own with --query.")
     if args.status:
         return _status(args, query)
 
