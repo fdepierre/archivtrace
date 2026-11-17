@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import io
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -44,13 +45,14 @@ def test_numbered_steps_with_results(capsys):
         "\n[2/2] Updating the notebook work/research\n  ✖ nothing to do\n")
 
 
-def test_saved_file_with_other_files(capsys):
-    console.saved_file("Analysis saved to:", "/data/research/a_analyse.md",
-                       also={"Report": "/data/research/reports/a_quality.md"})
+def test_saved_file_with_other_files(capsys, tmp_path):
+    folder = tmp_path / "research"
+    console.saved_file("Analysis saved to:", folder / "a_analyse.md",
+                       also={"Report": folder / "reports" / "a_quality.md"})
     assert capsys.readouterr().out == ("\nAnalysis saved to:\n"
-                                       "  Dir:    /data/research/\n"
+                                       f"  Dir:    {folder}{os.sep}\n"
                                        "  File:   a_analyse.md\n"
-                                       "  Report: reports/a_quality.md\n")
+                                       f"  Report: {Path('reports') / 'a_quality.md'}\n")
 
 
 def test_durations():
