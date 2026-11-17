@@ -164,8 +164,50 @@ def test_ollama_backend_sends_the_context_window():
 
     backend = OllamaBackend.__new__(OllamaBackend)
     backend.model = "m"
-    backend._service = MagicMock()
-    backend._service.generate.return_value = "{}"
+    backend._client = MagicMock()
+    backend._client.chat.return_value.message.content = "{}"
     backend.generate("x" * 18_000, system="s", max_tokens=2048)
-    options = backend._service.generate.call_args.kwargs["options"]
-    assert options["num_ctx"] > 4096 and options["num_predict"] == 2048
+    kwargs = backend._client.chat.call_args.kwargs
+    assert kwargs["options"]["num_ctx"] > 4096 and kwargs["options"]["num_predict"] == 2048
+    assert kwargs["think"] is False and kwargs["format"] is None
+
+
+def _backend_with(content: str, thinking: str | None = None):
+    from unittest.mock import MagicMock, patch
+
+    from pipeline.llm_gateway import OllamaBackend
+
+    client = MagicMock()
+    client.chat.return_value.message.content = content
+    client.chat.return_value.message.thinking = thinking
+    with patch("ollama.Client", return_value=client):
+        backend = OllamaBackend(base_url="http://localhost:11434", model="qwen3.5", timeout=5)
+    return backend, client
+
+
+def test_ollama_backend_asks_the_chat_api_with_system_model_and_schema():
+    backend, client = _backend_with("  synthèse  ")
+    schema = {"type": "object"}
+    result = backend.generate("prompt", system="sys", json_schema=schema)
+    assert result.text == "synthèse"
+    kwargs = client.chat.call_args.kwargs
+    assert kwargs["model"] == "qwen3.5"
+    assert [m["role"] for m in kwargs["messages"]] == ["system", "user"]
+    assert kwargs["format"] == schema
+
+
+def test_ollama_backend_keeps_the_reasoning_when_the_answer_is_empty():
+    backend, _ = _backend_with("", thinking=" raisonnement ")
+    assert backend.generate("prompt").text == "raisonnement"
+
+
+def test_ollama_backend_lists_models_and_reports_a_daemon_down():
+    from unittest.mock import MagicMock
+
+    backend, client = _backend_with("")
+    client.list.return_value.models = [MagicMock(model="qwen3.5:latest")]
+    assert backend.list_models() == ["qwen3.5:latest"]
+    assert backend.is_available()
+    client.list.side_effect = ConnectionError("down")
+    assert not backend.is_available()
+    assert backend.list_models() is None

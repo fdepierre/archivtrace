@@ -108,8 +108,8 @@ Reste :
 - **Réconcilier vitesse et exactitude** : analyser au 4b, puis faire vérifier ou recopier
   par le 9B les seules citations `(fuzzy)` ; mesurer le gain.
 - Afficher par source le nombre de citations exactes et approchées.
-- L'environnement de développement charge `ollama_shared` depuis le dossier voisin
-  `../shared`, sans schéma JSON : l'analyse le signale ; réinstaller depuis `vendor/`.
+- ~~Trois copies du client `ollama_shared`~~ : fait, ArchivTrace appelle directement le
+  client officiel `ollama`.
 - Les tests écrivent leurs appels factices dans le vrai journal `llm_calls.jsonl` (filtrés
   par l'estimation, mais à séparer).
 

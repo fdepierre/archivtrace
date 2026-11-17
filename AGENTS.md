@@ -105,7 +105,7 @@ Callable API: `pipeline.run_api.run_collect` / `run_analyse` / `run_synthesize` 
 `connectors.meta.ConnectorInfo` / `list_connector_info()`.
 HTTP layer deferred until a front is needed.
 OCR optional: `pip install -r requirements-ocr.txt`.
-Ollama client: vendored at `vendor/ollama_shared`.
+Ollama client: the official `ollama` package, called from `pipeline/llm_gateway.OllamaBackend`.
 Wikipedia: default connector when none is named (`--connector wikipedia` still
 explicit). MediaWiki API; `wikipedia_lang` default `fr`.
 

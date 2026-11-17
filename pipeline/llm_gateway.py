@@ -4,7 +4,7 @@ Callers (analyse / synthesize / idea extractor) must use ``LlmGateway`` via
 ``build_llm_gateway`` — not raw HTTP or provider SDKs.
 
 Supported providers:
-- ``ollama`` — local Ollama via ``ollama_shared``
+- ``ollama`` — local Ollama through the official ``ollama`` client
 - ``openai`` / ``openrouter`` / ``perplexity`` — Chat Completions HTTP API
 - ``none`` — no gateway (caller falls back to template)
 
@@ -122,7 +122,7 @@ def context_window(prompt: str, system: str | None, max_tokens: int | None) -> i
 
 
 class OllamaBackend(LlmBackend):
-    """Local Ollama via shared ``OllamaService``."""
+    """Local Ollama through the official ``ollama`` client."""
 
     supports_json_schema = True
 
@@ -133,33 +133,23 @@ class OllamaBackend(LlmBackend):
         model: str,
         timeout: float,
     ) -> None:
-        try:
-            from ollama_shared import OllamaService
-        except ModuleNotFoundError as exc:
-            raise ModuleNotFoundError(
-                "Package 'ollama_shared' was not found. Activate the project venv "
-                "(.venv\\Scripts\\Activate.ps1) or install it:\n"
-                "  pip install -e ../shared/ollama_shared"
-            ) from exc
+        from ollama import Client
+
         self.model = model
         self.base_url = base_url
-        self._service = OllamaService(model=model, host=base_url, timeout=timeout)
-        # An older ollama_shared (installed from another folder) has no format
-        # parameter: the answer is then guided by the prompt alone
-        import inspect
-
-        self.supports_json_schema = "format" in inspect.signature(
-            self._service.generate).parameters
-        if not self.supports_json_schema:
-            logger.warning("ollama_shared without JSON schema support: reinstall it with "
-                           "pip install -e ./vendor/ollama_shared (answers may be cut)")
+        self._client = Client(host=base_url, timeout=timeout)
 
     def is_available(self) -> bool:
-        return self._service.is_available()
+        try:
+            self._client.list()
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Ollama unavailable at %s: %s", self.base_url, exc)
+            return False
 
     def list_models(self) -> list[str] | None:
         try:
-            return list(self._service.list_available_models())
+            return [str(m.model) for m in self._client.list().models]
         except Exception:  # noqa: BLE001
             return None
 
@@ -178,17 +168,23 @@ class OllamaBackend(LlmBackend):
             options["num_predict"] = max_tokens
         if temperature is not None:
             options["temperature"] = temperature
-        # think=True only for long synthesis: Ollama may put reasoning in
-        # message.thinking; OllamaService still returns message.content first.
-        text = self._service.generate(
-            prompt,
-            system=system,
+        messages = [{"role": "system", "content": system}] if system else []
+        messages.append({"role": "user", "content": prompt})
+        # think=False keeps reasoning models (qwen3.5) from filling message.thinking
+        # and leaving message.content empty; think=True only for long synthesis
+        response = self._client.chat(
             model=self.model,
-            options=options or None,
+            messages=messages,
+            options=options,
             think=think,
-            **({"format": json_schema} if json_schema is not None else {}),
+            format=json_schema,
         )
-        return LlmCompletionResult(text=text or "")
+        message = response.message
+        text = (message.content or "").strip()
+        if not text:
+            # The whole budget went to reasoning: keep what the model wrote
+            text = (message.thinking or "").strip()
+        return LlmCompletionResult(text=text)
 
 
 class OpenAICompatibleBackend(LlmBackend):
@@ -609,7 +605,6 @@ def build_llm_gateway(
             thinking = model_cfg.thinking if think is None else think
             if isinstance(backend, OllamaBackend):
                 backend.model = selected_model
-                backend._service.model = selected_model
     else:
         api_key = resolve_api_key(chosen, config.llm_api_key)
         if not api_key:

@@ -15,12 +15,8 @@ from pathlib import Path
 
 from models import MatchMode
 
-try:
-    from ollama_shared import DEFAULT_HOST as DEFAULT_OLLAMA_HOST
-    from ollama_shared import DEFAULT_MODEL as DEFAULT_OLLAMA_MODEL
-except ModuleNotFoundError:  # pragma: no cover - venv without shared package
-    DEFAULT_OLLAMA_HOST = "http://localhost:11434"
-    DEFAULT_OLLAMA_MODEL = "qwen3.5"
+DEFAULT_OLLAMA_HOST = "http://localhost:11434"
+DEFAULT_OLLAMA_MODEL = "qwen3.5"
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) "

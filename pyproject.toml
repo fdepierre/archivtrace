@@ -33,9 +33,8 @@ ignore = [
 
 [tool.pyright]
 include = ["pipeline", "connectors", "strategies", "utils", "models.py", "config.py"]
-exclude = ["work", ".venv", "ci", "vendor/ollama_shared"]
+exclude = ["work", ".venv"]
 venvPath = "."
 venv = ".venv"
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
-extraPaths = ["vendor/ollama_shared"]

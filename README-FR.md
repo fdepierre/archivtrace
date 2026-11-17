@@ -155,7 +155,7 @@ Placez-vous dans le répertoire du projet (étape 0), puis créez un **environne
 | Installer les paquets | `pip install -r requirements.txt` | idem | idem |
 | Signe que c'est bon | le prompt affiche `(.venv)` au début de la ligne | idem | idem |
 
-`requirements.txt` installe le client Ollama vendored depuis `vendor/ollama_shared`
+`requirements.txt` installe le client Ollama officiel (`ollama`)
 (aucun dépôt voisin requis). OCR optionnel : `pip install -r requirements-ocr.txt`.
 
 **Windows (PowerShell) :**
@@ -498,17 +498,8 @@ archivtrace/
 ├── work/synthesys/              # Synthèses et contextes
 ├── queries.txt                  # Exemple de fichier de requêtes multiples
 ├── requirements.txt
-└── pyrightconfig.json           # Résolution du package ollama_shared pour le linter
+└── pyrightconfig.json           # Réglages du vérificateur de types
 ```
-
-Package externe partagé (sibling) :
-
-```
-vendor/ollama_shared/            # Client Ollama vendored (pip install -e)
-```
-
-Sibling optionnel pour partage multi-projets : `../shared/ollama_shared/` (même API ; YouTube2Post).
-
 
 ### Séparation des responsabilités
 
@@ -1333,7 +1324,7 @@ text = gateway.complete(prompt, system="…")
 
 | Fournisseur (`llm_provider` / `--llm`) | Notes |
 |---|---|
-| `ollama` (défaut) | Local via `vendor/ollama_shared` ; liste `/api/tags` + repli si besoin |
+| `ollama` (défaut) | Local par le client officiel `ollama` ; liste `/api/tags` + repli si besoin |
 | `openai` / `openrouter` / `perplexity` | HTTP compatible OpenAI ; définir la `*_API_KEY` correspondante |
 | `none` | Synthèse template uniquement (pas d'appel API) |
 
@@ -1342,21 +1333,10 @@ text = gateway.complete(prompt, system="…")
 
 `pipeline/llm_client.py` ne fait que **réexporter** la gateway (et `get_model_for_task`).
 
-Le transport Ollama est vendored sous `vendor/ollama_shared/` (installé par
-`requirements.txt`). Un checkout sibling `../shared/ollama_shared` reste
-compatible et est réutilisé par :
-
-- **ArchivTrace** (ce projet) — quand `llm_provider=ollama`
-- **[YouTube2Post](https://github.com/fdepierre/YouTube2Post)** — chat sur transcripts
-
-```python
-from ollama_shared import OllamaService, DEFAULT_MODEL  # "qwen3.5"
-
-service = OllamaService(model="qwen3.5")
-text = service.generate("Prompt…", system="Instructions…", think=False)
-```
-
-Si le linter signale `ollama_shared` introuvable : vérifier que le venv est sélectionné et que `pyrightconfig.json` est présent.
+`OllamaBackend` (`pipeline/llm_gateway.py`) appelle directement le client officiel
+`ollama` : API chat, `think=False` par défaut pour que les modèles à raisonnement
+répondent dans `message.content`, et le schéma JSON passé en `format` quand la
+consigne en a un.
 
 ---
 
@@ -1401,7 +1381,7 @@ Exécuter **T0 → T1** avant chaque merge. Exécuter **T2** lors d’un changem
 | Mots-clés, chemins, merge, chaînes | `test_keyword_matcher.py`, `test_research_paths.py`, `test_analyse_paths.py`, `test_merge_collections.py`, `test_strings.py` |
 | PDF / OCR / politique d’analyse | `test_text_extractor.py`, `test_ocr.py`, `test_collection_analyzer.py`, `test_analyse_policy.py` |
 | Rapport Markdown / patch / aller-retour | `test_markdown_reporter.py`, `test_markdown_patcher.py`, `test_markdown_roundtrip.py` |
-| Gateway LLM, modèles par tâche, config | `test_llm_gateway.py`, `test_llm_task_models.py`, `test_llm_idea_extractor.py`, `test_llm_resume.py`, `test_llm_max_chars.py`, `test_config_precedence.py`, `test_ollama_shared.py` |
+| Gateway LLM, modèles par tâche, config | `test_llm_gateway.py`, `test_llm_task_models.py`, `test_llm_idea_extractor.py`, `test_llm_resume.py`, `test_llm_max_chars.py`, `test_config_precedence.py`, `test_ollama_config.py` |
 | Extraction ancrée + synthèse | `test_prompt_grounding.py`, `test_synthesis_grounding.py`, `test_synthesis.py`, `test_synthesis_structure.py` |
 | Validation historique (corroboration, critique externe, NLI, CoVe) | `test_historical_validation.py` |
 | Comparaison Ollama live | `test_model_comparison_rochecardon.py` |

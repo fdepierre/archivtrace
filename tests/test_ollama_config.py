@@ -1,18 +1,16 @@
-"""Tests for config.json loading and shared Ollama defaults."""
+"""Tests for config.json loading and Ollama defaults."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-from ollama_shared import DEFAULT_MODEL, OllamaService
-
+from config import DEFAULT_OLLAMA_MODEL
 from utils.app_config import load_config, load_json_config, ollama_settings, strip_jsonc
 
 
 def test_default_model_is_qwen():
-    assert DEFAULT_MODEL == "qwen3.5"
+    assert DEFAULT_OLLAMA_MODEL == "qwen3.5"
 
 
 def test_load_config_defaults_when_missing(tmp_path, monkeypatch):
@@ -87,19 +85,3 @@ def test_project_config_json_loads():
     assert cfg.llm_model_synthesis == "qwen3.5"
     assert cfg.llm_model_extraction == "qwen3.5"
 
-
-def test_ollama_service_generate_delegates_to_chat():
-    mock_client = MagicMock()
-    mock_response = MagicMock()
-    mock_response.message.content = "  synthèse  "
-    mock_client.chat.return_value = mock_response
-
-    with patch("ollama.Client", return_value=mock_client):
-        service = OllamaService(model="qwen3.5", host="http://localhost:11434")
-        result = service.generate("prompt", system="sys")
-
-    assert result == "synthèse"
-    mock_client.chat.assert_called_once()
-    call_kwargs = mock_client.chat.call_args.kwargs
-    assert call_kwargs["model"] == "qwen3.5"
-    assert call_kwargs["messages"][0]["role"] == "system"

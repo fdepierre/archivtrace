@@ -155,8 +155,8 @@ Go to the project directory (step 0), then create a **virtual environment** (`.v
 | Install packages | `pip install -r requirements.txt` | same | same |
 | Sign it worked | the prompt shows `(.venv)` at the start of the line | same | same |
 
-`requirements.txt` installs the vendored Ollama client from `vendor/ollama_shared`
-(no sibling checkout required). Optional OCR: `pip install -r requirements-ocr.txt`.
+`requirements.txt` installs the official Ollama client (`ollama`); nothing else to
+check out. Optional OCR: `pip install -r requirements-ocr.txt`.
 
 **Windows (PowerShell):**
 ```powershell
@@ -495,14 +495,8 @@ archivtrace/
 ├── work/synthesys/              # Syntheses and contexts
 ├── queries.txt                  # Example multi-query file
 ├── requirements.txt
-└── pyrightconfig.json           # ollama_shared package resolution for the linter
+└── pyrightconfig.json           # Type checker settings
 ```
-
-```
-vendor/ollama_shared/            # Vendored Ollama client (pip install -e)
-```
-
-Optional sibling for multi-project sharing: `../shared/ollama_shared/` (same API; YouTube2Post).
 
 ### Separation of responsibilities
 
@@ -1330,7 +1324,7 @@ text = gateway.complete(prompt, system="…")  # uses gateway.think / temperatur
 
 | Provider (`llm_provider` / `--llm`) | Notes |
 |---|---|
-| `ollama` (default) | Local via vendored `vendor/ollama_shared`; lists `/api/tags` and falls back if needed |
+| `ollama` (default) | Local through the official `ollama` client; lists `/api/tags` and falls back if needed |
 | `openai` / `openrouter` / `perplexity` | OpenAI-compatible HTTP; set the matching `*_API_KEY` |
 | `none` | Template synthesis only (no API call) |
 
@@ -1338,21 +1332,9 @@ text = gateway.complete(prompt, system="…")  # uses gateway.think / temperatur
 
 `pipeline/llm_client.py` only **re-exports** gateway symbols (plus `get_model_for_task`) for compatibility.
 
-The Ollama transport is vendored under `vendor/ollama_shared/` (installed by
-`requirements.txt`). A sibling checkout at `../shared/ollama_shared` remains
-compatible for multi-project development and is reused by:
-
-- **ArchivTrace** (this project) — when `llm_provider=ollama`
-- **[YouTube2Post](https://github.com/fdepierre/YouTube2Post)** — chat on transcripts
-
-```python
-from ollama_shared import OllamaService, DEFAULT_MODEL  # "qwen3.5"
-
-service = OllamaService(model="qwen3.5")
-text = service.generate("Prompt…", system="Instructions…", think=False)
-```
-
-If the linter reports `ollama_shared` as missing: check that the venv is selected and that `pyrightconfig.json` / `vendor/ollama_shared` are present.
+`OllamaBackend` (`pipeline/llm_gateway.py`) calls the official `ollama` client
+directly: chat API, `think=False` by default so reasoning models answer in
+`message.content`, and the JSON schema passed as `format` when the prompt has one.
 
 ---
 
@@ -1397,7 +1379,7 @@ Run **T0 → T1** before every merge. Run **T2** when changing prompts, models, 
 | Keywords, paths, merge, strings | `test_keyword_matcher.py`, `test_research_paths.py`, `test_analyse_paths.py`, `test_merge_collections.py`, `test_strings.py` |
 | PDF / OCR / analyse policy | `test_text_extractor.py`, `test_ocr.py`, `test_collection_analyzer.py`, `test_analyse_policy.py` |
 | Markdown report / patch / round-trip | `test_markdown_reporter.py`, `test_markdown_patcher.py`, `test_markdown_roundtrip.py` |
-| LLM gateway, task models, config | `test_llm_gateway.py`, `test_llm_task_models.py`, `test_llm_idea_extractor.py`, `test_llm_resume.py`, `test_llm_max_chars.py`, `test_config_precedence.py`, `test_ollama_shared.py` |
+| LLM gateway, task models, config | `test_llm_gateway.py`, `test_llm_task_models.py`, `test_llm_idea_extractor.py`, `test_llm_resume.py`, `test_llm_max_chars.py`, `test_config_precedence.py`, `test_ollama_config.py` |
 | Grounded extraction + synthesis | `test_prompt_grounding.py`, `test_synthesis_grounding.py`, `test_synthesis.py`, `test_synthesis_structure.py` |
 | Historical validation (corroboration, external criticism, NLI, CoVe) | `test_historical_validation.py` |
 | Live Ollama comparison | `test_model_comparison_rochecardon.py` |

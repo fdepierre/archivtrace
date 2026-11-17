@@ -8,9 +8,8 @@ pymupdf>=1.24      # imported as "fitz" — primary extractor
 pdfplumber>=0.11   # fallback extractor
 pypdf>=4.2         # last-resort extractor
 
-# LLM local (synthèse) — vendored client (also used by YouTube2Post)
-ollama>=0.4
--e ./vendor/ollama_shared
+# LLM local (Ollama): official client (think and format need 0.5)
+ollama>=0.5
 
 # Structured validation of LLM JSON outputs (analyse / synthèse prompts)
 pydantic>=2.6
