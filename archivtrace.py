@@ -20,6 +20,7 @@ from pipeline.workflow_guide import (
     render_run_report,
     render_status,
 )
+from utils import console
 from utils.app_config import CONFIG_FILENAME, load_config, load_json_config
 from utils.sites_config import (
     catalog_cards,
@@ -86,9 +87,9 @@ def _shared_options() -> argparse.ArgumentParser:
         help="Search and resolve only: no download and no language model.",
     )
     parser.add_argument(
-        "--verbose",
+        "-v", "--verbose",
         action="store_true",
-        help="Line-by-line log instead of the live board.",
+        help="Show each event and the technical details, on separate lines.",
     )
     parser.add_argument(
         "--config",
@@ -164,11 +165,11 @@ def _ensure_sites(
         try:
             chosen = parse_site_choice(sites_arg, cfg)
         except ValueError as exc:
-            print(str(exc), file=sys.stderr)
+            console.error(str(exc))
             return None, 2
         write_sites(chosen, config_path)
         labels = ", ".join(chosen)
-        print(f"Sites saved: {labels}")
+        console.note(f"Sites saved: {labels}")
         return chosen, None
 
     saved = read_sites(config_path)
@@ -178,21 +179,21 @@ def _ensure_sites(
     print(format_catalog(cfg))
     is_tty = bool(getattr(stdin, "isatty", lambda: False)())
     if not is_tty:
-        print("python archivtrace.py --sites wikipedia")
-        print("python archivtrace.py --sites all")
+        print(console.style("python archivtrace.py --sites wikipedia", "green"))
+        print(console.style("python archivtrace.py --sites all", "green"))
         return None, 2
     try:
         answer = stdin.readline()  # type: ignore[attr-defined]
     except Exception as exc:  # noqa: BLE001
-        print(f"Could not read the site choice: {exc}", file=sys.stderr)
+        console.error(f"Could not read the site choice: {exc}")
         return None, 2
     try:
         chosen = parse_site_choice(answer, cfg)
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        console.error(str(exc))
         return None, 2
     write_sites(chosen, config_path)
-    print(f"Sites saved: {', '.join(chosen)}")
+    console.note(f"Sites saved: {', '.join(chosen)}")
     return chosen, None
 
 
@@ -230,7 +231,8 @@ def _run_collect_and_analysis(
     run_cfg = replace(cfg, output_dir=research_dir)  # type: ignore[type-var]
     interactive = sys.stdout.isatty() and not verbose
     code = 1
-    board = ProgressBoard(query=query, sites=sites, interactive=interactive)
+    board = ProgressBoard(query=query, sites=sites, interactive=interactive,
+                          steps=len(sites) + (1 if synthesize_after else 0))
     synthesis_note: str | None = None
     try:
         with board:
@@ -258,7 +260,7 @@ def _run_collect_and_analysis(
                 if synth_code != 0 and code == 0:
                     code = synth_code
     finally:
-        print(
+        emit(
             render_run_report(
                 query=query,
                 sites=sites,
@@ -266,8 +268,7 @@ def _run_collect_and_analysis(
                 events=board.events,
                 exit_code=code,
                 synthesis_note=synthesis_note,
-            ),
-            end="",
+            )
         )
     return code
 
@@ -321,6 +322,7 @@ def main(
     if not args.verbose:
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpcore").setLevel(logging.WARNING)
+    console.setup(args.verbose)
     config_path = args.config or Path(CONFIG_FILENAME)
     stream = stdin if stdin is not None else sys.stdin
     command = args.command
@@ -355,26 +357,26 @@ def main(
         return 0
 
     if not args.query:
-        print(
-            'Give a topic, for example: python archivtrace.py '
-            f'{command} --query "your topic"',
-            file=sys.stderr,
-        )
+        console.error('Give a topic, for example: python archivtrace.py '
+                      f'{command} --query "your topic"')
         return 2
 
     if command == "synthesize":
         from pipeline.run_api import run_synthesize
 
-        result = run_synthesize(cfg, query=args.query, research_dir=research_dir)
-        for error in result.errors:
-            print(error, file=sys.stderr)
-        for path in result.paths:
-            print(path)
+        progress = console.Run()
+        try:
+            result = run_synthesize(cfg, query=args.query, research_dir=research_dir,
+                                    progress=progress)
+        finally:
+            progress.close()
+        if result.path is not None:
+            console.saved_file("Synthesis saved to:", result.path)
         return result.exit_code
 
     if command == "analysis" and not _has_notebook(summaries, args.query, sites):
-        print(f'No notebook for "{args.query}".', file=sys.stderr)
-        print(f'python archivtrace.py collect --query "{args.query}"')
+        console.error(f'No notebook for "{args.query}".')
+        console.next_command(f'python archivtrace.py collect --query "{args.query}"')
         return 2
 
     collect_only = command == "collect" or args.collect_only or args.collecte_seule
@@ -394,5 +396,4 @@ def main(
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     sys.exit(main())

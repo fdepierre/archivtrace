@@ -247,6 +247,39 @@ Results are in the **`work/research/`** and **`work/synthesys/`** folders. Open 
 
 > **Tip**: always start with `--dry-run` or `--max-results 2` for a quick trial without downloading too many PDFs.
 
+### What the commands show
+
+Every command shows its work the same way (the presentation of
+[YouTube2Post](https://github.com/fdepierre/YouTube2Post), in `utils/console.py`): numbered
+steps, the result of each step with its duration, then where the file was saved.
+
+```text
+$ python analyse.py --input work/research/2026-11-16_neandertal_youtube2post_collecte.md --source 3
+
+[1/1] Source 3 — Entre préhistoire européenne et sud-est asiatique
+  ! Retrying analyze_document for JSON-only repair
+  ✓ 10 claims (10:03)
+
+Analysis saved to:
+  Dir:    /home/me/archivtrace/work/research/
+  File:   2026-11-16_neandertal_youtube2post_collecte_analyse_qwen3-5-latest.md
+  Report: /home/me/archivtrace/work/logs/llm/2026-11-16_neandertal_analyse_quality.md
+  ✓ 4 sources: 1 analysed, 3 left as they were (model qwen3.5:latest)
+```
+
+| Line | Meaning |
+|---|---|
+| `[2/5] name` | a step: one source for `analyse.py`, one site for `collecte.py` and `archivtrace.py` |
+| `  ✓ result (3s)` | what the step gave, and how long it took |
+| `  ✖ reason` | the step failed; the run goes on with the next one |
+| `  ! message` | a warning from the program |
+| `    · detail` | technical detail, only with `-v` / `--verbose` |
+| `Next: python …` | the command of the next step of the work |
+
+On a terminal, a line that turns shows what a long step is doing (`block 3/8 [26:00–39:00],
+about 12:40 left`). Colours are used on a terminal only; set the `NO_COLOR` environment
+variable to turn them off. Redirected to a file, the output is plain text.
+
 ### Advanced options (optional)
 
 | | **Windows** | **Linux** | **WSL** |

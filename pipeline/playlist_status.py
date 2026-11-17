@@ -156,17 +156,31 @@ def next_steps(rows: list[VideoStatus], notebook: Path | None, inputs: list[Path
     return steps
 
 
+# How far each state is: done (green), work to do (yellow), failed (red)
+_STATE_COLOURS = {
+    ANALYSED: "green", IGNORED: "dim",
+    TRANSCRIPTION_FAILED: "red", ANALYSIS_FAILED: "red",
+    NOT_TRANSCRIBED: "dim",
+}
+
+
 def format_status(rows: list[VideoStatus]) -> str:
     """One line per video, then the count of each state."""
+    from utils.console import style
+
+    def coloured(state: str, width: int = 0) -> str:
+        return style(f"{state:<{width}}", _STATE_COLOURS.get(state, "yellow"))
+
     width = max((len(r.state) for r in rows), default=0)
     lines = []
     for r in rows:
         place = f"{r.position:>3}." if r.position is not None else "   -"
-        detail = f" ({r.detail})" if r.detail else ""
-        lines.append(f"{place} {r.state:<{width}}  {r.title}{detail}")
+        detail = style(f" ({r.detail})", "dim") if r.detail else ""
+        lines.append(f"{style(place, 'dim')} {coloured(r.state, width)}  {r.title}{detail}")
     counts: dict[str, int] = {}
     for r in rows:
         counts[r.state] = counts.get(r.state, 0) + 1
     lines.append("")
-    lines.append(", ".join(f"{n} {state}" for state, n in counts.items()) or "no video found")
+    lines.append(", ".join(f"{n} {coloured(state)}" for state, n in counts.items())
+                 or "no video found")
     return "\n".join(lines)

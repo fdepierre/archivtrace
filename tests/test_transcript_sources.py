@@ -535,3 +535,41 @@ def test_model_text_cannot_start_a_line_of_the_notebook():
     starts = [line for line in body.splitlines()
               if line.startswith(("## Source", "### ", "- Local file", "- Text version"))]
     assert starts == []
+
+
+def test_analysis_shows_one_numbered_step_per_source(tmp_path, capsys):
+    from utils.console import Run
+
+    sources = tmp_path / "sources"
+    for video in ("AAAAAAAAAAA", "BBBBBBBBBBB", "CCCCCCCCCCC"):
+        _write(sources, _source(video))
+    notebook = import_transcripts([sources], "Néandertal", research_dir=tmp_path / "research").notebook
+    analyzer = CollectionAnalyzer(
+        client=LlmGateway(_Backend("n'a pas été trouvé par hasard"), provider="stub",
+                          model="stub", operation="analyse"),
+        download_dir=tmp_path / "downloads")
+    capsys.readouterr()
+    analyzer.run(read_collection(notebook), output_path=notebook, limit=2, progress=Run())
+    lines = [line for line in capsys.readouterr().out.splitlines() if line]
+    assert [line[:15] for line in lines[::2]] == ["[1/2] Source 1 ", "[2/2] Source 2 "]
+    assert all(line.startswith("  ✓ 1 claim (") for line in lines[1::2])
+
+
+def test_import_command_shows_steps_and_where_the_notebook_is(tmp_path, capsys):
+    import import_sources
+
+    _write(tmp_path / "sources", _source("AAAAAAAAAAA"))
+    research = tmp_path / "research"
+    args = ["--input", str(tmp_path / "sources"), "--query", "Néandertal",
+            "--research-dir", str(research)]
+    assert import_sources.main(args) == 0
+    out = capsys.readouterr().out
+    assert "[1/2] Reading the transcripts\n  ✓ 1 transcribed video (" in out
+    assert '[2/2] Updating the notebook "Néandertal"\n  ✓ 1 added, 0 new transcriptions, ' in out
+    assert f"Notebook saved to:\n  Dir:  {research}" in out
+    assert "Next: python analyse.py --input " in out
+    assert import_sources.main(args) == 0  # nothing new: no next command
+    assert "Next:" not in capsys.readouterr().out
+    assert import_sources.main(["--input", str(tmp_path / "empty"), "--query", "x",
+                                "--research-dir", str(research)]) == 1
+    assert "  ✖ no YouTube2Post transcript" in capsys.readouterr().out

@@ -16,6 +16,7 @@ principes de données sont dans [DATA_LINEAGE.md](DATA_LINEAGE.md).
 | 2 | `import_sources.py` déclare les vidéos dans un carnet ; chaque affirmation est localisée `[mm:ss–mm:ss]` ; réimport sans doublon ; nouvelle transcription = analyse obsolète. |
 | 3 | Les longues vidéos sont analysées en entier, par blocs, avec cache, reprise et relance en deux moitiés d'un bloc tronqué. |
 | 4 | État de chaque vidéo d'une playlist (`yt2post-playlist/1`), reprise et lots (`-n`), `import_sources.py --status`, fichier d'analyse tenu à jour, `analyse.py --limit` et `--source`. Écrit et testé, pas encore fusionné. |
+| Affichage | Toutes les commandes d'ArchivTrace affichent des étapes numérotées, leur résultat et leur durée, comme `yt2post.py` (`utils/console.py`) ; `rich` n'est plus utilisé. Écrit et testé, pas encore fusionné. |
 
 ## Mesures de référence
 
@@ -47,6 +48,13 @@ Deux enseignements :
 - **Le coût vient des réponses tronquées**, pas de la longueur de la vidéo : 87 % du temps
   est passé sur un bloc dont la réponse dépassait la limite de sortie.
 
+Seconde analyse de la même vidéo, le même jour, sans rien changer :
+
+- **Un bloc tronqué n'est jamais mis en cache.** Les deux premiers blocs sont revenus du
+  cache en quelques secondes, le troisième a été redemandé au modèle : 10 min.
+- **Le résultat n'est pas stable.** Cette fois la réparation de la réponse a réussi, et la
+  vidéo a donné 10 affirmations au lieu de 17. Le résultat réparé est maintenant en cache.
+
 La transcription d'une grande playlist est faisable en une nuit. **L'analyse ne l'est pas** :
 c'est le premier chantier.
 
@@ -61,6 +69,9 @@ Chaque chantier a un objectif, un critère de réussite, et ce qu'il ne doit pas
   0. Borner la réponse : demander au plus N affirmations par bloc (les plus importantes), et
      adapter la taille du bloc à la densité, pour ne plus tronquer. C'est le gain le plus
      sûr d'après le test.
+  0 bis. Mettre en cache la décision « ce bloc se coupe en deux », pour ne pas redemander au
+     modèle une réponse qui a déjà été tronquée ; et dire dans les limites de la source
+     quand une réponse a été réparée, car elle peut contenir moins d'affirmations.
   1. Mesurer qwen3.5:4b contre 9B sur les mêmes 3 vidéos : durée, nombre d'affirmations,
      part de citations exactes. Le 4b tient en entier sur un GPU de 6 Go.
   2. Analyse ciblée : n'envoyer au modèle que les blocs proches d'un passage qui contient le
@@ -139,7 +150,10 @@ Chaque chantier a un objectif, un critère de réussite, et ce qu'il ne doit pas
 - Versions des outils de CI épinglées (la CI d'ArchivTrace a été rouge d'octobre à novembre
   2026 à cause d'outils non épinglés).
 - Affichage commun : `utils/console.py` suit `modules/ui.py` de YouTube2Post ; un test signale
-  une dérive.
+  une dérive. Reste : le compte rendu final de `archivtrace.py` (« Done. ») garde son ancienne
+  forme ; `synthesize.py` montre deux étapes (lecture, rédaction) et non le détail des
+  vérifications ; le nombre de citations exactes et approchées n'est pas affiché par source ;
+  les messages du journal sont encore en français et en anglais mêlés.
 
 ### H. YouTube2Post seul
 

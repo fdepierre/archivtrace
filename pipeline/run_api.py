@@ -29,6 +29,7 @@ from utils.research_paths import discover_corpus_files
 
 if TYPE_CHECKING:
     from pipeline.corroboration_checker import PromotionMode
+    from utils.console import Run
 
 logger = logging.getLogger("run_api")
 
@@ -97,8 +98,18 @@ def _collect_query_connector(
     cfg: Config,
     query: str,
     connector: str,
-) -> tuple[str, str, Path | None, bool]:
-    """Collect one query on one connector; return (query, connector, path, ok)."""
+) -> tuple[str, str, Path | None, bool, str, float]:
+    """Collect one query on one connector.
+
+    Return (query, connector, path, ok, what was found or why it failed, seconds).
+    """
+    import time
+
+    started = time.monotonic()
+
+    def took() -> float:
+        return time.monotonic() - started
+
     from connectors import build_connector
     from pipeline.collector import Collector
     from pipeline.markdown_reporter import MarkdownReporter
@@ -113,16 +124,16 @@ def _collect_query_connector(
         conn = build_connector(connector, http, cfg)
     except KeyError:
         logger.exception("Unknown connector: %s", connector)
-        return query, connector, None, False
+        return query, connector, None, False, "unknown site", took()
 
     collector = Collector(conn, cfg)
     reporter = MarkdownReporter(max_excerpts=cfg.max_excerpts)
     logger.info("=== Collect: %r via %s ===", query, connector)
     try:
         collection = collector.collect(query)
-    except Exception:  # noqa: BLE001 - one pair must not abort the batch
+    except Exception as exc:  # noqa: BLE001 - one pair must not abort the batch
         logger.exception("Unexpected failure for %r via %s", query, connector)
-        return query, connector, None, False
+        return query, connector, None, False, f"failed: {exc}", took()
 
     path = reporter.write(collection, cfg.output_dir)
     logger.info(
@@ -131,7 +142,10 @@ def _collect_query_connector(
         len(collection.retained),
         collection.documents_with_matches,
     )
-    return query, connector, path, True
+    sources = len(collection.retained)
+    summary = (f"{sources} source{'s' if sources != 1 else ''}, "
+               f"{collection.documents_with_matches} with the subject")
+    return query, connector, path, True, summary, took()
 
 
 def run_collect(
@@ -140,8 +154,11 @@ def run_collect(
     queries: list[str],
     connector: str = DEFAULT_CONNECTOR,
     connectors: str | None = None,
+    progress: Run | None = None,
 ) -> RunResult:
     """Run documentary collection for each query (and connector when multi-site).
+
+    ``progress``: the display of the run, one step per site and query.
 
     When several connectors are requested, each (query, connector) pair runs in
     parallel with its own ``HttpClient`` so sites are queried independently.
@@ -169,11 +186,22 @@ def run_collect(
     exit_code = 0
     max_workers = max(1, min(int(cfg.collect_max_workers or 1), len(tasks)))
 
+    from utils.console import SILENT
+
+    progress = progress or SILENT
+    progress.expect(len(tasks))
+
     if len(tasks) == 1:
         query, name = tasks[0]
-        _query, _name, path, ok = _collect_query_connector(cfg, query, name)
+        progress.step(name, f'"{query}"')
+        progress.wait("searching and downloading")
+        _query, _name, path, ok, summary, _ = _collect_query_connector(cfg, query, name)
         if path is not None:
             written.append(path)
+        if ok:
+            progress.done(summary)
+        else:
+            progress.failed(summary)
         if not ok:
             exit_code = 1
             errors.append(f"Collection failed: {query!r} via {name}")
@@ -202,17 +230,27 @@ def run_collect(
             pool.submit(_collect_query_connector, cfg, query, name): (query, name)
             for query, name in tasks
         }
-        for future in as_completed(futures):
+        progress.wait(f"searching {len(tasks)} sites at once")
+        for finished, future in enumerate(as_completed(futures), start=1):
             query, name = futures[future]
+            # Sites are searched at the same time: each is shown when it ends
+            progress.step(name, f'"{query}"')
             try:
-                _query, _name, path, ok = future.result()
+                _query, _name, path, ok, summary, seconds = future.result()
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Unexpected failure for %r via %s", query, name)
                 exit_code = 1
                 errors.append(f"Unexpected failure: {query!r} via {name}: {exc}")
+                progress.failed(f"failed: {exc}")
                 continue
             if path is not None:
                 written.append(path)
+            if ok:
+                progress.done(summary, seconds)
+            else:
+                progress.failed(summary)
+            if finished < len(tasks):
+                progress.wait(f"{len(tasks) - finished} of {len(tasks)} sites still searching")
             if not ok:
                 exit_code = 1
                 errors.append(f"Collection failed: {query!r} via {name}")
@@ -287,12 +325,19 @@ def run_synthesize(
     verify_cove: bool | None = None,
     no_nli: bool = False,
     nli_llm: bool | None = None,
+    progress: Run | None = None,
 ) -> RunResult:
     """Run synthesis using cfg policies; optional CLI overrides for advanced use."""
+    from utils.console import SILENT
+
+    progress = progress or SILENT
+    progress.expect(2)
+    progress.step("Reading the analyses")
     collection = load_synthesis_collection(
         query=query, input_path=input_path, research_dir=research_dir
     )
     if collection is None:
+        progress.failed("no research file could be read")
         return RunResult(
             exit_code=2,
             errors=("Could not load the synthesis corpus.",),
@@ -316,6 +361,10 @@ def run_synthesize(
         len(collection.sources_with_excerpts),
         len(collection.sources_with_llm_ideas),
     )
+    progress.done(f"{len(collection.sources)} sources, "
+                  f"{len(collection.sources_with_llm_ideas)} analysed")
+    progress.step("Writing the synthesis" if mode == "synthese" else "Writing the context",
+                  f'"{collection.query}"')
 
     llm = None
     use_template = True
@@ -329,8 +378,8 @@ def run_synthesize(
                 task=task_name,
             )
         except ValueError as exc:
-            logger.error("%s", exc)
-            return RunResult(exit_code=2)
+            progress.failed(str(exc))
+            return RunResult(exit_code=2, errors=(str(exc),))
         if client is not None and client.is_available():
             llm = client
             model = client.model
@@ -395,8 +444,12 @@ def run_synthesize(
         classify_sources=bool(cfg.synthesis_classify_sources),
         classify_llm=classify_llm,
     )
+    progress.wait(f"asking {model}" if llm is not None else "filling the template")
     result = synthesizer.run(collection)
     path = synthesizer.write(result, out_dir)
+    claims = int(result.grounded_claim_count)
+    progress.done(f"{claims} sourced claim{'s' if claims != 1 else ''} used"
+                  + (f", written by {model}" if llm is not None else ", from the template"))
     logger.info("%s ecrit: %s (backend=%s)", mode, path, result.llm_backend)
 
     from pipeline.quality_report import (
@@ -666,8 +719,12 @@ def run_analyse(
     llm_provider: str | None = None,
     limit: int | None = None,
     only_sources: set[str] | None = None,
+    progress: Run | None = None,
 ) -> RunResult:
-    """Run per-document LLM analysis using cfg policies."""
+    """Run per-document LLM analysis using cfg policies.
+
+    ``progress``: the display of the run (one step per source); none by default.
+    """
     from pipeline.collection_analyzer import CollectionAnalyzer, load_collection
     from pipeline.llm_gateway import build_llm_gateway
     from pipeline.llm_task_models import get_model_for_task
@@ -808,6 +865,7 @@ def run_analyse(
         output_path=work_path,
         limit=limit,
         only_sources=only_sources,
+        progress=progress,
     )
 
     analyzer.write(patched, work_path)
@@ -844,6 +902,9 @@ def run_analyse(
         "failed": stats.sources_failed,
         "pending_before": pending,
         "done_before": done,
+        "sources": len(collection.sources),
+        "model": model,
+        "provider": client.provider,
     }
     if stats.sources_failed and not stats.sources_analyzed:
         return RunResult(

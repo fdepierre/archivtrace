@@ -1,16 +1,35 @@
-"""Researcher-facing progress: four workflow columns, or plain lines."""
+"""Researcher-facing progress of a full run: one step per site, then the synthesis.
+
+Same presentation as the other commands (``utils/console.py``):
+
+    [1/3] wikipedia search
+      ✓ 4 downloaded, 3 sent to analysis (12s)
+    [3/3] Synthesis
+      ✓ 2026-11-16_valmontagne_synthese.md (41s)
+
+On a terminal, the file being downloaded and the one being analysed are shown
+on a line that turns. Elsewhere (a file, a test, ``--verbose``), each event is
+printed on its own line.
+"""
 
 from __future__ import annotations
 
 import sys
-from typing import Any, TextIO
+import time
+from typing import TextIO
+
+from utils.console import Spinner, duration, format_detail, style
+
+_SITE_EVENTS = ("Search", "Resume")
 
 
 class ProgressBoard:
-    """Show search, download, analysis and synthesis side by side.
+    """Show search, download, analysis and synthesis as numbered steps.
 
-    When stdout is not a terminal, each event is printed as one line so logs
-    and tests stay readable. The live panel is optional (``rich``).
+    ``update`` receives the events of the run: ``Search <site>``,
+    ``Resume <site>``, ``Download <title>``, ``Analysis <title>`` and
+    ``Synthesis <state or file name>``. ``steps``: how many steps are expected
+    (by default one per site).
     """
 
     def __init__(
@@ -20,6 +39,7 @@ class ProgressBoard:
         sites: list[str],
         interactive: bool = False,
         stream: TextIO | None = None,
+        steps: int | None = None,
     ) -> None:
         self.query = query
         self.sites = sites
@@ -30,78 +50,121 @@ class ProgressBoard:
         self.telechargement = "—"
         self.analyse = "—"
         self.synthese = "—"
-        self._live: object | None = None
+        self._total = steps if steps is not None else len(sites)
+        self._current = 0
+        self._open = False  # a step is shown and has no result yet
+        self._synthesis = False  # that step is the synthesis
+        self._started = time.monotonic()
+        self._downloads = 0
+        self._analyses = 0
+        self._spinner: Spinner | None = None
 
     def __enter__(self) -> ProgressBoard:
-        if not self.interactive:
-            return self
-        try:
-            import shutil
-
-            from rich.console import Console
-            from rich.live import Live
-        except ImportError:
-            self.interactive = False
-            return self
-        width = shutil.get_terminal_size(fallback=(80, 24)).columns
-        width = max(72, min(width, 100))
-        console = Console(file=self.stream, force_terminal=True, width=width)
-        self._view = self._colored_board
-        self._live = Live(
-            self._view(),
-            console=console,
-            auto_refresh=False,
-            transient=True,
-        )
-        self._live.start()  # type: ignore[attr-defined]
         return self
 
     def __exit__(self, *exc: object) -> None:
-        live = self._live
-        if live is not None:
-            live.stop()  # type: ignore[attr-defined]
-            self._live = None
+        self._close_step()
 
+    # -- output ----------------------------------------------------------
+    def _print(self, text: str) -> None:
+        if self._spinner is not None:
+            self._spinner.message(text)
+        else:
+            print(text, file=self.stream, flush=True)
+
+    def _stop_spinner(self) -> None:
+        if self._spinner is not None:
+            self._spinner.stop()
+            self._spinner = None
+
+    def _waiting(self, elapsed: float) -> str:
+        parts = []
+        if self.telechargement != "—":
+            parts.append(f"download: {self.telechargement}")
+        if self.analyse != "—":
+            parts.append(f"analysis: {self.analyse}")
+        if self.synthese == "running":
+            parts = ["writing the synthesis"]
+        text = " · ".join(parts) or "searching"
+        return f"{text[:90]} · {duration(elapsed)}"
+
+    def _step(self, name: str, detail: str = "") -> None:
+        self._close_step()
+        self._synthesis = name == "Synthesis"
+        self._current += 1
+        self._total = max(self._total, self._current)
+        self._open = True
+        self._started = time.monotonic()
+        self._downloads = self._analyses = 0
+        number = style(f"[{self._current}/{self._total}]", "bold", "cyan")
+        self._print(f"\n{number} {style(name, 'bold')}"
+                    + (f" {style(detail, 'dim')}" if detail else ""))
+        if self.interactive:
+            self._spinner = Spinner(self._waiting, stream=self.stream)
+            self._spinner.__enter__()
+
+    def _result(self, text: str, ok: bool = True) -> None:
+        self._stop_spinner()
+        took = style(f"({duration(time.monotonic() - self._started)})", "dim")
+        if ok:
+            self._print(f"  {style('✓', 'bold', 'green')} {text} {took}")
+        else:
+            self._print(f"  {style('✖', 'bold', 'red')} {style(text, 'yellow')}")
+        self._open = False
+
+    def _close_step(self) -> None:
+        """Result of a site step: what was downloaded and sent to the analysis."""
+        if self._open:
+            sent = f", {self._analyses} sent to analysis" if self._analyses else ""
+            self._result(f"{self._downloads} downloaded{sent}")
+        self._stop_spinner()
+
+    # -- events ----------------------------------------------------------
     def update(self, line: str) -> None:
-        """Record one pipeline event and refresh the board."""
+        """Record one pipeline event and show it."""
         self.events.append(line)
-        if line.startswith("Resume"):
-            self.recherche = line.removeprefix("Resume ").strip() or "—"
-        elif line.startswith("Search"):
-            self.recherche = line.removeprefix("Search ").strip() or "—"
-        elif line.startswith("Download"):
-            self.telechargement = line.removeprefix("Download ").strip() or "—"
-        elif line.startswith("Analysis"):
-            self.analyse = line.removeprefix("Analysis ").strip() or "—"
-        elif line.startswith("Synthesis"):
-            self.synthese = line.removeprefix("Synthesis ").strip() or "—"
-        live = self._live
-        if live is not None:
-            live.update(self._view())  # type: ignore[attr-defined]
-            return
-        print(line, file=self.stream, flush=True)
+        kind, _, rest = line.partition(" ")
+        rest = rest.strip() or "—"
+        if kind in _SITE_EVENTS:
+            self.recherche = rest
+            self.telechargement = self.analyse = "—"
+            site, _, more = rest.partition(" ")
+            what = "notebook reopened" if kind == "Resume" else "search"
+            self._step(site, f"{what} {more}".strip())
+        elif kind == "Download":
+            self.telechargement = rest
+            self._downloads += 1
+            self._event(line)
+        elif kind == "Analysis":
+            self.analyse = rest
+            if rest == "unavailable":
+                self._print(style("  ! no language model: the files are collected, "
+                                  "the analysis is postponed", "yellow"))
+                return
+            self._analyses += 1
+            self._event(line)
+        elif kind == "Synthesis":
+            self.synthese = rest
+            if rest == "running":
+                self._step("Synthesis")
+            elif rest == "failed":
+                if not (self._open and self._synthesis):
+                    self._step("Synthesis")
+                self._result("the synthesis was not written", ok=False)
+            else:  # the name of the file written, or of the one already there
+                if not (self._open and self._synthesis):
+                    self._step("Synthesis")
+                self._result(rest)
+        else:
+            self._event(line)
 
-    def _colored_board(self) -> Any:
-        """Live panel: cyan frame, colored column headers."""
-        from rich.panel import Panel
-        from rich.table import Table
-
-        table = Table(
-            header_style="bold cyan",
-            border_style="cyan",
-            expand=False,
-            pad_edge=False,
-            padding=(0, 1),
-        )
-        table.add_column("Search", style="white", max_width=18, no_wrap=True, overflow="ellipsis")
-        table.add_column("Download", style="green", max_width=22, no_wrap=True, overflow="ellipsis")
-        table.add_column("Analysis", style="yellow", max_width=18, no_wrap=True, overflow="ellipsis")
-        table.add_column("Synthesis", style="magenta", max_width=14, no_wrap=True, overflow="ellipsis")
-        table.add_row(self.recherche, self.telechargement, self.analyse, self.synthese)
-        return Panel(table, title=self.query, border_style="cyan", title_align="left")
+    def _event(self, line: str) -> None:
+        """One event: on the turning line on a terminal, else on its own line."""
+        if not self.interactive:
+            self._print(format_detail(line, self.stream))
 
     def render(self) -> str:
-        """Plain-text columns, also used inside the live panel."""
+        """The latest state of the four activities, in plain text columns."""
         sites = ", ".join(self.sites) if self.sites else "—"
         return "\n".join(
             [

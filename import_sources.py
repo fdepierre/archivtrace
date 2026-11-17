@@ -36,6 +36,7 @@ from pipeline.transcript_import import (
     import_transcripts,
 )
 from pipeline.transcript_source import load_transcript
+from utils import console
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -68,6 +69,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only show where each video stands (transcription, import, analysis); "
              "write nothing.",
     )
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="Show the technical details of each step.")
     return parser
 
 
@@ -86,43 +89,57 @@ def _default_query(paths: list[Path]) -> str | None:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    console.setup(args.verbose)
     query = args.query or _default_query(args.input)
     if not query:
-        print("No --query given and the videos are not in a playlist: give the research "
-              "subject with --query.", file=sys.stderr)
+        console.error("No --query given and the videos are not in a playlist: give the "
+                      "research subject with --query.")
         return 2
     if not args.query:
-        print(f'Research subject: "{query}" (the playlist\'s title; the analysis keeps what '
-              "relates to it: give a real subject with --query)")
+        console.warn(f'Research subject: "{query}" (the playlist\'s title; the analysis keeps '
+                     "what relates to it: give a real subject with --query)")
     if args.status:
         return _status(args, query)
+
+    steps = console.Steps(["Reading the transcripts", "Updating the notebook"])
+    steps.next()
+    found = find_transcripts(args.input)
+    if not found:
+        steps.failed("no YouTube2Post transcript (yt2post-source/1 JSON) found")
+        return 1
+    steps.done(f"{len(found)} transcribed video{'s' if len(found) != 1 else ''}")
+    steps.next(f'"{query}"')
     try:
         result = import_transcripts(args.input, query, research_dir=args.research_dir,
                                     notebook=args.output)
     except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        steps.failed(str(exc))
         return 1
-    print(f"Notebook: {result.notebook}")
-    print(f"  {len(result.added)} added, {len(result.updated)} new transcription(s), "
-          f"{len(result.unchanged)} unchanged")
+    steps.done(f"{len(result.added)} added, {len(result.updated)} new "
+               f"transcription{'s' if len(result.updated) != 1 else ''}, "
+               f"{len(result.unchanged)} unchanged")
     for source_id in result.updated:
-        print(f"  new version of {source_id}: its analysis must be redone")
+        console.warn(f"  ! new version of {source_id}: its analysis must be redone")
     for path in result.stale_analyses:
-        print(f"  analysis made on an older transcription: {path}")
+        console.warn(f"  ! analysis made on an older transcription: {path}")
+    console.saved_file("Notebook saved to:", result.notebook)
     if result.added or result.updated:
-        print(f"Next: python analyse.py --input {result.notebook}")
+        console.next_command(f"python analyse.py --input {result.notebook}")
     return 0
 
 
 def _status(args: argparse.Namespace, query: str) -> int:
     notebook = args.output or existing_notebook(args.research_dir, query)
+    known = notebook if notebook and notebook.exists() else None
     rows = collect_status(args.input, notebook)
-    print(f"Notebook: {notebook if notebook and notebook.exists() else '(none yet)'}")
-    if notebook and notebook.exists() and analysis_file(notebook) != notebook:
-        print(f"Analysis file: {analysis_file(notebook)}")
+    label = console.style("Notebook:", "dim")
+    print(f"{label} {known or '(none yet)'}")
+    if known and analysis_file(known) != known:
+        print(f"{console.style('Analysis file:', 'dim')} {analysis_file(known)}")
+    print()
     print(format_status(rows))
-    for step in next_steps(rows, notebook if notebook and notebook.exists() else None, args.input):
-        print(f"Next: {step}")
+    for step in next_steps(rows, known, args.input):
+        console.next_command(step)
     return 0
 
 

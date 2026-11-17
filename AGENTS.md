@@ -22,6 +22,15 @@ Defaults live only in `config.py`. Overlay: `utils/app_config.resolve_settings()
 
 `config.json` is **JSONC** (`//` and `/* */` comments allowed). Keys starting with `_` are ignored.
 
+## Console output
+
+Every command prints through `utils/console.py` (numbered steps, `✓ result (duration)`,
+`✖ reason`, `Dir:` / `File:` at the end): a copy of YouTube2Post's `modules/ui.py`, kept in
+step by `tests/test_console.py`. No `logging.basicConfig`, no `rich`: call
+`console.setup(verbose)` at the start of a command. The log shows warnings and errors only;
+info lines are details shown with `-v`. Pipeline code never prints: it receives a
+`console.Run` (`progress=`), silent by default.
+
 ## Markdown format
 
 Canonical markers / LLM status phrases: `pipeline/markdown_format.py`

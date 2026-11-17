@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from pipeline.markdown_patcher import patch_collection_markdown
 from pipeline.markdown_reader import ParsedCollection, read_collection
 from pipeline.source_text import resolve_source_file
 from pipeline.text_extractor import TextExtractor
+from utils.console import SILENT, Run, duration
 from utils.files import write_text
 from utils.strings import keyword_variants
 
@@ -79,6 +81,7 @@ class CollectionAnalyzer:
         output_path: Path | None = None,
         limit: int | None = None,
         only_sources: set[str] | None = None,
+        progress: Run | None = None,
     ) -> tuple[str, AnalyzeStats]:
         """Return patched Markdown text and run statistics.
 
@@ -87,8 +90,10 @@ class CollectionAnalyzer:
 
         ``limit``: at most this many sources are analysed on this run (a long
         playlist is analysed in several runs). ``only_sources``: only the
-        sources with these numbers or document ids.
+        sources with these numbers or document ids. ``progress``: the display
+        of the run, one step per source analysed (none by default).
         """
+        progress = progress or SILENT
         stats = AnalyzeStats(sources_total=len(collection.sources))
         skip_existing = skip_existing and not force
         updates: dict[int, LlmExtraction] = {}
@@ -102,6 +107,9 @@ class CollectionAnalyzer:
             variants=keyword_variants(collection.query),
         )
 
+        # What this run analyses is decided first, so that each source can be
+        # shown as a numbered step
+        todo = []
         for source in collection.sources:
             label = f"Source {source.index} — {source.title}"
             decision = should_process(
@@ -114,25 +122,24 @@ class CollectionAnalyzer:
                 {str(source.index), source.document_id or ""} & only_sources
             ):
                 decision = ProcessDecision(False, "hors sélection (--source), ignorée")
-            if decision.process and limit is not None and processed >= limit:
+            if decision.process and limit is not None and len(todo) >= limit:
                 decision = ProcessDecision(False, "limite atteinte (--limit), reportée")
-            if not decision.process:
+            pdf_path = self._resolve_pdf(source, collection) if decision.process else None
+            if decision.process and pdf_path is None:
+                decision = ProcessDecision(False, "PDF introuvable")
+            if not decision.process or pdf_path is None:
                 stats.sources_skipped += 1
                 stats.messages.append(f"{label}: {decision.reason}")
                 from pipeline.quality_report import EXTRACTION_QUALITY
 
                 EXTRACTION_QUALITY.record_source(skipped=True)
                 continue
+            todo.append((source, pdf_path, label))
+        progress.expect(len(todo))
 
-            pdf_path = self._resolve_pdf(source, collection)
-            if pdf_path is None:
-                stats.sources_skipped += 1
-                stats.messages.append(f"{label}: PDF introuvable")
-                from pipeline.quality_report import EXTRACTION_QUALITY
-
-                EXTRACTION_QUALITY.record_source(skipped=True)
-                continue
-
+        for source, pdf_path, label in todo:
+            progress.step(label)
+            progress.wait("reading the text")
             extracted = self._text.extract(pdf_path)
             ocr_retried = False
             if (extracted.error or extracted.char_count == 0) and self.auto_ocr:
@@ -183,6 +190,7 @@ class CollectionAnalyzer:
                 updates[source.index] = extraction
                 detail = extracted.error or "texte vide"
                 stats.messages.append(f"{label}: extraction texte impossible ({detail})")
+                progress.failed(f"no text could be read ({detail})")
                 from pipeline.quality_report import EXTRACTION_QUALITY
 
                 EXTRACTION_QUALITY.record_source(
@@ -207,7 +215,9 @@ class CollectionAnalyzer:
             # A transcript is read whole, block by block; other documents around
             # their keyword hits, within one block
             analyse = self._extractor.extract_in_blocks if transcript else self._extractor.extract
-            extra = {"cache_dir": self.cache_dir, "refresh": force} if transcript else {}
+            extra = ({"cache_dir": self.cache_dir, "refresh": force,
+                      "on_block": _block_progress(progress)} if transcript else {})
+            progress.wait("asking the model")
             extraction = analyse(
                 collection.query,
                 title=source.title,
@@ -226,18 +236,21 @@ class CollectionAnalyzer:
             if extraction.needs_review and not extraction.body:
                 stats.sources_failed += 1
                 stats.messages.append(f"{label}: à revoir manuellement ({extraction.error})")
+                progress.failed(f"to review by hand ({extraction.error})")
                 EXTRACTION_QUALITY.record_source(
                     failed=True, needs_review=True, ocr_retry=ocr_retried
                 )
             elif extraction.error and not extraction.body:
                 stats.sources_failed += 1
                 stats.messages.append(f"{label}: échec LLM ({extraction.error})")
+                progress.failed(f"the model failed ({extraction.error})")
                 EXTRACTION_QUALITY.record_source(
                     failed=True, ocr_retry=ocr_retried
                 )
             elif not extraction.body.strip():
                 stats.sources_failed += 1
                 stats.messages.append(f"{label}: réponse LLM vide")
+                progress.failed("empty answer from the model")
                 EXTRACTION_QUALITY.record_source(
                     failed=True, ocr_retry=ocr_retried
                 )
@@ -245,6 +258,7 @@ class CollectionAnalyzer:
                 stats.sources_analyzed += 1
                 note = " (à revoir)" if extraction.needs_review else ""
                 stats.messages.append(f"{label}: analyse terminée{note}")
+                progress.done(_result_text(extraction))
                 EXTRACTION_QUALITY.record_source(
                     analyzed=True,
                     needs_review=bool(extraction.needs_review),
@@ -317,6 +331,30 @@ class CollectionAnalyzer:
         return resolve_source_file(
             source, connector=collection.connector, download_dir=self.download_dir
         )
+
+
+def _result_text(extraction: LlmExtraction) -> str:
+    """'17 claims', with what the reader must know about them."""
+    if extraction.claims is None:
+        text = "analysis written"
+    else:
+        count = len(extraction.claims.get("affirmations") or [])
+        text = f"{count} claim{'s' if count != 1 else ''}"
+    return text + (", to review" if extraction.needs_review else "")
+
+
+def _block_progress(progress: Run):
+    """Show 'block 3/8 [26:00–39:00], about 12 min left' while a transcript is analysed."""
+    started = time.monotonic()
+
+    def on_block(number: int, total: int, label: str) -> None:
+        text = f"block {number}/{total} {label}"
+        if number > 1:  # from the blocks done so far; a cut answer adds blocks
+            left = (time.monotonic() - started) / (number - 1) * (total - number + 1)
+            text += f", about {duration(left)} left"
+        progress.wait(text)
+
+    return on_block
 
 
 def _with_citation_locations(extraction: LlmExtraction, path: Path) -> str:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -198,43 +197,36 @@ def render_config(*, path: Path, config: dict[str, object]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def emit(text: str) -> None:
-    """Print a screen. Headings and commands are colored when the console allows it."""
-    from rich.console import Console
-    from rich.text import Text
+_HEADINGS = {
+    "Configuration",
+    "sites used for search (see config.json)",
+    "stored previous research",
+    "config.json",
+}
 
-    console = Console(
-        highlight=False,
-        soft_wrap=True,
-        force_terminal=sys.stdout.isatty(),
-    )
+
+def emit(text: str) -> None:
+    """Print a screen, with the colours of the other commands (``utils/console.py``)."""
+    from utils.console import style
+
     for line in text.splitlines():
-        if line in {
-            "Configuration",
-            "sites used for search (see config.json)",
-            "stored previous research",
-            "config.json",
-        }:
-            console.print(line, style="bold yellow")
+        if line in _HEADINGS:
+            print(style(line, "bold", "yellow"))
         elif line.startswith("python "):
-            console.print(line, style="green")
+            print(style(line, "green"))
         elif line == "ArchivTrace":
-            console.print(line, style="bold cyan")
+            print(style(line, "bold", "cyan"))
+        elif line == "Done.":
+            print(style(line, "bold", "green"))
         elif line.startswith(("1. ", "2. ", "3. ")):
-            console.print(line, style="bold")
+            print(style(line, "bold"))
         elif " saved" in line:
-            painted = Text(line)
-            painted.highlight_words(["saved"], style="bold green")
-            console.print(painted)
-        elif ": " in line and not line.startswith("-"):
+            print(line.replace("saved", style("saved", "bold", "green")))
+        elif ": " in line and not line.startswith(("-", " ")):
             key, _, value = line.partition(": ")
-            row = Text()
-            row.append(key, style="cyan")
-            row.append(": ")
-            row.append(value, style="white")
-            console.print(row)
+            print(f"{style(key, 'cyan')}: {value}")
         else:
-            console.print(line)
+            print(line)
 
 
 def render_guide(

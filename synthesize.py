@@ -22,6 +22,7 @@ from config import (
     DEFAULT_SYNTHESIS_DIR,
 )
 from pipeline.run_api import run_reverify, run_synthesize
+from utils import console
 from utils.app_config import resolve_settings
 
 logger = logging.getLogger("synthese")
@@ -157,7 +158,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run NLI with the LLM instead of the deterministic heuristic.",
     )
-    intention.add_argument("--verbose", action="store_true")
+    intention.add_argument("-v", "--verbose", action="store_true",
+                           help="Show the technical details of each step.")
     return parser
 
 
@@ -165,11 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Run synthesis (Ollama or template) and write the Markdown output."""
     args = build_parser().parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    console.setup(args.verbose)
 
     if args.allow_single_source_facts:
         logger.warning(
@@ -208,9 +206,20 @@ def main(argv: list[str] | None = None) -> int:
         nli_llm=True if args.nli_llm else None,
     )
     if args.reverify is not None:
-        return run_reverify(cfg, synthesis_path=args.reverify, **common).exit_code
-    mode = {"synthesis": "synthese", "context": "contexte"}.get(args.mode, args.mode)
-    return run_synthesize(cfg, mode=mode, **common).exit_code
+        result = run_reverify(cfg, synthesis_path=args.reverify, **common)
+        title = "Checked synthesis saved to:"
+    else:
+        mode = {"synthesis": "synthese", "context": "contexte"}.get(args.mode, args.mode) or "synthese"
+        progress = console.Run()
+        try:
+            result = run_synthesize(cfg, mode=mode, progress=progress, **common)
+        finally:
+            progress.close()
+        title = "Context saved to:" if mode == "contexte" else "Synthesis saved to:"
+    if result.path is not None:
+        also = {"Report": result.quality_report_path} if result.quality_report_path else None
+        console.saved_file(title, result.path, also=also)
+    return result.exit_code
 
 
 if __name__ == "__main__":

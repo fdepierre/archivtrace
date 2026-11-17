@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from config import DEFAULT_LLM_MAX_CHARS
@@ -267,12 +268,14 @@ class LlmIdeaExtractor:
         date: str | None = None,
         cache_dir: Path | None = None,
         refresh: bool = False,
+        on_block: Callable[[int, int, str], None] | None = None,
     ) -> LlmExtraction:
         """
         Analyse the whole text, block by block (one LLM call each), and merge
         the claims. A block already analysed with the same model, prompt and
         text is read from ``cache_dir`` instead of asking the model again,
         unless ``refresh`` (the new answer then replaces the cached one).
+        ``on_block(number, total, label)`` is called before each block.
         """
         blocks = text_blocks(text.pages, self.max_chars)
         results: list[tuple[str, LlmExtraction]] = []
@@ -282,6 +285,8 @@ class LlmIdeaExtractor:
             block = pending.pop(0)
             number += 1
             label = _block_label(block)
+            if on_block is not None:
+                on_block(number, number + len(pending), label)
             if len(blocks) > 1 or number > 1:
                 logger.info("%s — bloc %d/%d %s", title, number, number + len(pending), label)
             pages = {p.number for p in block}

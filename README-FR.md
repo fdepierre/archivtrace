@@ -247,6 +247,41 @@ Les résultats sont dans les dossiers **`work/research/`** et **`work/synthesys/
 
 > **Conseil** : commencez toujours par `--dry-run` ou `--max-results 2` pour un essai rapide sans télécharger trop de PDF.
 
+### Ce que les commandes affichent
+
+Toutes les commandes montrent leur travail de la même façon (la présentation de
+[YouTube2Post](https://github.com/fdepierre/YouTube2Post), dans `utils/console.py`) : des
+étapes numérotées, le résultat de chaque étape avec sa durée, puis l'endroit où le fichier
+est enregistré. Les messages sont en anglais.
+
+```text
+$ python analyse.py --input work/research/2026-11-16_neandertal_youtube2post_collecte.md --source 3
+
+[1/1] Source 3 — Entre préhistoire européenne et sud-est asiatique
+  ! Retrying analyze_document for JSON-only repair
+  ✓ 10 claims (10:03)
+
+Analysis saved to:
+  Dir:    /home/moi/archivtrace/work/research/
+  File:   2026-11-16_neandertal_youtube2post_collecte_analyse_qwen3-5-latest.md
+  Report: /home/moi/archivtrace/work/logs/llm/2026-11-16_neandertal_analyse_quality.md
+  ✓ 4 sources: 1 analysed, 3 left as they were (model qwen3.5:latest)
+```
+
+| Ligne | Sens |
+|---|---|
+| `[2/5] nom` | une étape : une source pour `analyse.py`, un site pour `collecte.py` et `archivtrace.py` |
+| `  ✓ résultat (3s)` | ce que l'étape a donné, et sa durée |
+| `  ✖ raison` | l'étape a échoué ; le travail continue avec la suivante |
+| `  ! message` | un avertissement du programme |
+| `    · détail` | détail technique, seulement avec `-v` / `--verbose` |
+| `Next: python …` | la commande de l'étape suivante du travail |
+
+Sur un terminal, une ligne animée indique ce que fait une étape longue (`block 3/8
+[26:00–39:00], about 12:40 left`). Les couleurs ne sont utilisées que sur un terminal ; la
+variable d'environnement `NO_COLOR` les désactive. Redirigée vers un fichier, la sortie est
+du texte simple.
+
 ### Options avancées (facultatif)
 
 | | **Windows** | **Linux** | **WSL** |
@@ -452,6 +487,7 @@ archivtrace/
 ├── utils/
 │   ├── http.py                  # Client HTTP (timeout, delay, retries, UTF-8)
 │   ├── strings.py               # Normalisation, slug, variantes de mot-clé
+│   ├── console.py               # étapes numérotées, couleurs, ligne animée
 │   ├── dates.py                 # run_id, horodatages
 │   ├── files.py                 # Écriture sûre, chemins
 │   └── app_config.py            # config.json → Config (CLI > json > défauts)

@@ -20,7 +20,8 @@ import sys
 from pathlib import Path
 
 from config import DEFAULT_DOWNLOAD_DIR, DEFAULT_OLLAMA_HOST, DEFAULT_OLLAMA_MODEL
-from pipeline.run_api import run_analyse
+from pipeline.run_api import RunResult, run_analyse
+from utils import console
 from utils.app_config import resolve_settings
 
 logger = logging.getLogger("analyse")
@@ -179,18 +180,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="OCR language (fra maps to Paddle fr; default: fra).",
     )
-    intention.add_argument("--verbose", action="store_true")
+    intention.add_argument("-v", "--verbose", action="store_true",
+                           help="Show the technical details of each step.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run per-document LLM analysis and write the enriched Markdown file."""
     args = build_parser().parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    console.setup(args.verbose)
 
     if not args.input.exists():
         logger.error("File not found: %s", args.input)
@@ -215,18 +213,42 @@ def main(argv: list[str] | None = None) -> int:
         llm_base_url=args.llm_base_url or args.ollama_url,
     )
 
-    return run_analyse(
-        cfg,
-        input_path=args.input,
-        output_path=args.output,
-        in_place=bool(args.in_place),
-        only_matches=bool(args.only_matches),
-        skip_existing=bool(args.skip_existing),
-        force=bool(args.force),
-        llm_provider=args.llm,
-        limit=args.limit,
-        only_sources=set(args.source) if args.source else None,
-    ).exit_code
+    progress = console.Run()
+    try:
+        result = run_analyse(
+            cfg,
+            input_path=args.input,
+            output_path=args.output,
+            in_place=bool(args.in_place),
+            only_matches=bool(args.only_matches),
+            skip_existing=bool(args.skip_existing),
+            force=bool(args.force),
+            llm_provider=args.llm,
+            limit=args.limit,
+            only_sources=set(args.source) if args.source else None,
+            progress=progress,
+        )
+    finally:
+        progress.close()
+    _report(result)
+    return result.exit_code
+
+
+def _report(result: RunResult) -> None:
+    """Where the analysis was saved, and what this run did."""
+    stats = result.stats or {}
+    if result.path is None:
+        return
+    also = {"Report": result.quality_report_path} if result.quality_report_path else None
+    console.saved_file("Analysis saved to:", result.path, also=also)
+    counts = [f"{stats.get('analyzed', 0)} analysed"]
+    if stats.get("failed"):
+        counts.append(f"{stats['failed']} failed")
+    counts.append(f"{stats.get('skipped', 0)} left as they were")
+    console.note(f"{stats.get('sources', 0)} sources: " + ", ".join(counts)
+                 + f" (model {stats.get('model')})")
+    for message in result.errors:
+        console.warn(f"  ! {message}")
 
 
 if __name__ == "__main__":

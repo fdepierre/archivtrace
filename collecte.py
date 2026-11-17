@@ -25,6 +25,7 @@ from config import (
 from connectors import available_connectors
 from models import MatchMode
 from pipeline.run_api import run_collect
+from utils import console
 from utils.app_config import resolve_settings
 
 logger = logging.getLogger("collecte")
@@ -90,10 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     intention.add_argument(
-        "--verbose",
+        "-v", "--verbose",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Debug logs. --no-verbose forces INFO despite config.json.",
+        help="Show the technical details of each step. --no-verbose hides them "
+             "despite config.json.",
     )
 
     advanced.add_argument(
@@ -160,12 +162,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def configure_logging(verbose: bool | None) -> None:
-    """Configure root logging (INFO by default, DEBUG when ``verbose``)."""
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    """Send the log to the console: warnings and errors, and the details with ``verbose``."""
+    console.setup(bool(verbose))
 
 
 def load_queries(args: argparse.Namespace) -> list[str]:
@@ -179,7 +177,6 @@ def load_queries(args: argparse.Namespace) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     """Parse CLI arguments and run the collection pipeline."""
     args = build_parser().parse_args(argv)
-    configure_logging(args.verbose)
     cfg = resolve_settings(
         output_dir=args.output_dir,
         download_dir=args.download_dir,
@@ -197,13 +194,25 @@ def main(argv: list[str] | None = None) -> int:
         catalog_root=args.catalog_root,
         wikipedia_lang=args.wikipedia_lang,
     )
+    configure_logging(cfg.verbose)
     queries = load_queries(args)
-    return run_collect(
-        cfg,
-        queries=queries,
-        connector=args.connector,
-        connectors=args.connectors,
-    ).exit_code
+    progress = console.Run()
+    try:
+        result = run_collect(
+            cfg,
+            queries=queries,
+            connector=args.connector,
+            connectors=args.connectors,
+            progress=progress,
+        )
+    finally:
+        progress.close()
+    if len(result.paths) == 1:
+        console.saved_file("Notebook saved to:", result.paths[0])
+        console.next_command(f"python analyse.py --input {result.paths[0]}")
+    elif result.paths:
+        console.saved_files("Notebooks saved to:", result.paths)
+    return result.exit_code
 
 
 if __name__ == "__main__":
